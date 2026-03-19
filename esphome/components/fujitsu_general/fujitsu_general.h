@@ -56,7 +56,12 @@ class FujitsuGeneralClimate : public climate_ir::ClimateIR {
                   {climate::CLIMATE_SWING_OFF, climate::CLIMATE_SWING_VERTICAL, climate::CLIMATE_SWING_HORIZONTAL,
                    climate::CLIMATE_SWING_BOTH}) {}
 
+  void set_power_on_mode_transition(bool value) { this->power_on_mode_transition_ = value; }
+
  protected:
+  /// Override control to intercept mode transitions when power_on_mode_transition is enabled.
+  void control(const climate::ClimateCall &call) override;
+
   /// Transmit via IR the state of this climate controller.
   void transmit_state() override;
   /// Transmit via IR power off command.
@@ -76,6 +81,14 @@ class FujitsuGeneralClimate : public climate_ir::ClimateIR {
 
   // true if currently on - fujitsus transmit an on flag on when the remote moves from off to on
   bool power_{false};
+
+  // When true, require an explicit mode transition (OFF -> Cool/Heat/etc.) to power on.
+  // Some Fujitsu indoor units (e.g. those using AR-RY13 remotes) ignore the power-on bit
+  // in state messages and require a mode change to turn on.
+  bool power_on_mode_transition_{false};
+
+  // Tracks whether the current control() call includes an explicit mode change.
+  bool mode_changed_{false};
 };
 
 }  // namespace fujitsu_general

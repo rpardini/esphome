@@ -85,6 +85,13 @@ const uint16_t FUJITSU_GENERAL_TRL_SPACE = 8000;
 
 const uint32_t FUJITSU_GENERAL_CARRIER_FREQUENCY = 38000;
 
+void FujitsuGeneralClimate::control(const climate::ClimateCall &call) {
+  // Track whether this call includes an explicit mode change
+  this->mode_changed_ = call.get_mode().has_value();
+  // Delegate to the base class control method
+  climate_ir::ClimateIR::control(call);
+}
+
 void FujitsuGeneralClimate::transmit_state() {
   if (this->mode == climate::CLIMATE_MODE_OFF) {
     this->transmit_off_();
@@ -114,9 +121,20 @@ void FujitsuGeneralClimate::transmit_state() {
   uint8_t temperature_offset = temperature_clamped - FUJITSU_GENERAL_TEMP_MIN;
   SET_NIBBLE(remote_state, FUJITSU_GENERAL_TEMPERATURE_NIBBLE, temperature_offset);
 
-  // Set power on
+  // Set power on flag
   if (!this->power_) {
-    SET_NIBBLE(remote_state, FUJITSU_GENERAL_POWER_ON_NIBBLE, FUJITSU_GENERAL_POWER_ON);
+    if (this->power_on_mode_transition_) {
+      // When power_on_mode_transition is enabled, only set the power-on bit
+      // if an explicit mode change was requested. Some Fujitsu indoor units
+      // (e.g. those using AR-RY13 remotes) require a mode transition to turn on.
+      if (this->mode_changed_) {
+        SET_NIBBLE(remote_state, FUJITSU_GENERAL_POWER_ON_NIBBLE, FUJITSU_GENERAL_POWER_ON);
+      } else {
+        ESP_LOGV(TAG, "power_on_mode_transition enabled: skipping power-on (no explicit mode change)");
+      }
+    } else {
+      SET_NIBBLE(remote_state, FUJITSU_GENERAL_POWER_ON_NIBBLE, FUJITSU_GENERAL_POWER_ON);
+    }
   }
 
   // Set mode
@@ -184,7 +202,12 @@ void FujitsuGeneralClimate::transmit_state() {
 
   this->transmit_(remote_state, FUJITSU_GENERAL_STATE_MESSAGE_LENGTH);
 
-  this->power_ = true;
+  // Only mark as powered on if we actually sent the power-on bit, or were already on
+  if (this->power_ || !this->power_on_mode_transition_ || this->mode_changed_) {
+    this->power_ = true;
+  }
+  // Reset mode_changed_ so stale values don't persist across calls
+  this->mode_changed_ = false;
 }
 
 void FujitsuGeneralClimate::transmit_off_() {

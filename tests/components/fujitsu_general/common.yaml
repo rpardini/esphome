@@ -2,3 +2,7 @@ climate:
   - platform: fujitsu_general
     name: Fujitsu General Climate
     transmitter_id: xmitr
+  - platform: fujitsu_general
+    name: Fujitsu General Climate Strict
+    transmitter_id: xmitr
+    power_on_mode_transition: true
