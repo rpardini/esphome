@@ -1,0 +1,49 @@
+# Discovery reads the hwmon tree of whatever machine runs the build, so this
+# block is scoped to a chip name no runner has. It still exercises the scan and
+# the filters, but keeps the set of generated entities the same everywhere.
+hwmon:
+  discovery:
+    update_interval: 30s
+    include:
+      - "esphome_build_test/*"
+    exclude:
+      - "nvme*/*"
+
+sensor:
+  - platform: hwmon
+    chip: npu_thermal
+    input: temp1
+    name: NPU Temperature
+  - platform: hwmon
+    chip: pwmfan
+    input: fan1
+    name: Chassis Fan
+  - platform: hwmon
+    chip: pwmfan
+    input: pwm1
+    name: Chassis Fan PWM
+  - platform: hwmon
+    chip: "r8169_2_2400:00"
+    input: temp1
+    attribute: max
+    name: PHY Temperature Limit
+  - platform: hwmon
+    chip: acpitz
+    input: in0
+    name: ACPI Rail Voltage
+  - platform: hwmon
+    chip: power_meter
+    input: power1
+    name: System Power
+    update_interval: 10s
+
+text_sensor:
+  - platform: hwmon
+    chip: pwmfan
+    input: pwm1
+    attribute: enable
+    name: Fan Control Mode
+  - platform: hwmon
+    chip: pwmfan
+    attribute: name
+    name: Fan Chip Name

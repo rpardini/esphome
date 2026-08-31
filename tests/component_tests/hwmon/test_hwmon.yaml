@@ -1,0 +1,28 @@
+esphome:
+  name: hwmon-test
+
+host:
+
+logger:
+
+hwmon:
+  discovery:
+    include:
+      - "coretemp/*"
+
+sensor:
+  - platform: hwmon
+    chip: npu_thermal
+    input: temp1
+    name: NPU Temperature
+  - platform: hwmon
+    chip: pwmfan
+    input: fan1
+    name: Chassis Fan
+
+text_sensor:
+  - platform: hwmon
+    chip: pwmfan
+    input: pwm1
+    attribute: enable
+    name: Fan Control Mode
