@@ -31,6 +31,13 @@
 #define USE_MDNS_DEVICE_INFO_TXT
 #endif
 
+#if defined(USE_HOST) && defined(USE_MDNS_AVAHI)
+#include <array>
+struct AvahiClient;
+struct AvahiEntryGroup;
+struct AvahiThreadedPoll;
+#endif
+
 namespace esphome::mdns {
 
 // Helper struct that identifies strings that may be stored in flash storage (similar to LogString)
@@ -176,6 +183,41 @@ class MDNSComponent final : public Component
 #endif
   void compile_records_(StaticVector<MDNSService, MDNS_SERVICE_COUNT> &services, const char *mac_address_buf,
                         const char *config_hash_buf);
+
+#if defined(USE_HOST) && defined(USE_MDNS_AVAHI)
+  friend struct AvahiCallbacks;
+  /// Most addresses published for the node's own hostname
+  static constexpr size_t AVAHI_MAX_ADDRESSES = 16;
+  struct AvahiHostAddress {
+    int interface;
+    int protocol;
+    uint8_t address[16];
+    bool operator==(const AvahiHostAddress &other) const;
+  };
+
+  // Everything below runs on Avahi's poll thread, or with its lock held
+  void avahi_client_changed_(AvahiClient *client, int state);
+  void avahi_publish_all_(AvahiClient *client);
+  void avahi_publish_service_(AvahiClient *client, size_t index);
+  void avahi_publish_addresses_(AvahiClient *client);
+  void avahi_rename_services_(AvahiClient *client);
+  void avahi_reset_groups_();
+  /// Collects the machine's current addresses; runs on the main loop
+  static void avahi_collect_addresses_(StaticVector<AvahiHostAddress, AVAHI_MAX_ADDRESSES> &addresses);
+  void avahi_check_addresses_();
+
+  AvahiThreadedPoll *avahi_poll_{nullptr};
+  AvahiClient *avahi_client_{nullptr};
+  std::array<AvahiEntryGroup *, MDNS_SERVICE_COUNT> avahi_groups_{};
+  // Ports are read on the main loop, since a port can come from a lambda
+  std::array<uint16_t, MDNS_SERVICE_COUNT> avahi_ports_{};
+  AvahiEntryGroup *avahi_address_group_{nullptr};
+  StaticVector<AvahiHostAddress, AVAHI_MAX_ADDRESSES> avahi_addresses_{};
+  // Allocated by Avahi; replaced by an alternative name after a collision
+  char *avahi_instance_name_{nullptr};
+  // "<name>.local", or empty when Avahi already publishes it as the machine's own hostname
+  std::string avahi_host_name_;
+#endif
 };
 
 }  // namespace esphome::mdns
