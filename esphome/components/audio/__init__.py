@@ -9,18 +9,27 @@ from esphome.components.esp32 import (
     include_builtin_idf_component,
     require_certificate_bundle,
 )
+from esphome.config_helpers import filter_source_files_from_platform
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_BITS_PER_SAMPLE,
     CONF_NUM_CHANNELS,
     CONF_SAMPLE_RATE,
     CONF_SIZE,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
+    PlatformFramework,
 )
 from esphome.core import CORE
 import esphome.final_validate as fv
 from esphome.types import ConfigType
 
-AUTO_LOAD = ["ring_buffer"]
+
+def AUTO_LOAD() -> list[str]:
+    # The ring buffer and the decoders built on it use FreeRTOS
+    return ["ring_buffer"] if CORE.is_esp32 else []
+
+
 CODEOWNERS = ["@kahrendt"]
 DOMAIN = "audio"
 audio_ns = cg.esphome_ns.namespace("audio")
@@ -179,13 +188,23 @@ CODECS_SCHEMA = cv.Schema(
     }
 )
 
+
+def _validate_codecs_platform(config: ConfigType) -> ConfigType:
+    if CONF_CODECS in config and not CORE.is_esp32:
+        raise cv.Invalid(
+            f"'{CONF_CODECS}' is only supported on ESP32", path=[CONF_CODECS]
+        )
+    return config
+
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.Optional(CONF_CODECS): _maybe_empty_codec(CODECS_SCHEMA),
         }
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
+    _validate_codecs_platform,
 )
 
 AUDIO_COMPONENT_SCHEMA = cv.Schema(
@@ -334,6 +353,10 @@ def _emit_memory_pair(value: str | None, psram_key: str, internal_key: str) -> N
 
 
 async def to_code(config: ConfigType) -> None:
+    if not CORE.is_esp32:
+        # Only the stream and file type helpers in audio.cpp build elsewhere
+        return
+
     # Re-enable ESP-IDF's HTTP client (excluded by default to save compile time)
     include_builtin_idf_component("esp_http_client")
     # HTTPS streams verify the server against the root certificate bundle
@@ -436,3 +459,15 @@ async def to_code(config: ConfigType) -> None:
     if data.wav_support:
         cg.add_define("USE_AUDIO_WAV_SUPPORT")
         add_idf_component(name="esphome/micro-wav", ref="0.2.0")
+
+
+_ESP32_ONLY = {PlatformFramework.ESP32_IDF, PlatformFramework.ESP32_ARDUINO}
+
+FILTER_SOURCE_FILES = filter_source_files_from_platform(
+    {
+        "audio_decoder.cpp": _ESP32_ONLY,
+        "audio_reader.cpp": _ESP32_ONLY,
+        "audio_resampler.cpp": _ESP32_ONLY,
+        "audio_transfer_buffer.cpp": _ESP32_ONLY,
+    }
+)

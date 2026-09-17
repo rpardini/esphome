@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) || defined(USE_HOST)
 
 #include "esphome/components/sendspin/sendspin_hub.h"
 #include "esphome/components/switch/switch.h"
@@ -21,4 +21,4 @@ class SendspinSwitch final : public switch_::Switch, public SendspinChild {
 
 }  // namespace esphome::sendspin_
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 || USE_HOST
