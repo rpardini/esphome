@@ -429,6 +429,61 @@ def test_convert_libraries_manifest_optional_uses_default_layout(
     assert "has no manifest; using PlatformIO's default layout" in caplog.text
 
 
+def test_convert_libraries_manifest_override_stands_in_for_missing_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A component-supplied manifest is not a torn download: no re-fetch."""
+    calls = _patch_download_without_manifest(
+        monkeypatch, tmp_path, manifest_on_force=True
+    )
+    backend = _backend()
+    backend.manifest_overrides = {"esphome/A": {"build": {"srcDir": "src"}}}
+
+    top = convert_libraries([Library("esphome/A", "1.0.0", None)], backend)
+
+    assert calls == [False]
+    assert top[0].data == {"name": "esphome/A", "build": {"srcDir": "src"}}
+
+
+def test_convert_libraries_manifest_override_replaces_shipped_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The override wins over the downloaded manifest, including its platform
+    list and dependencies, which are no longer walked."""
+    _patch_download_with_manifests(
+        monkeypatch,
+        tmp_path,
+        {
+            "esphome/A": {
+                "name": "A",
+                "platforms": "atmelavr",
+                "dependencies": {"esphome/B": "1.0.0"},
+            }
+        },
+    )
+    backend = _backend()
+    backend.manifest_overrides = {"esphome/A": {"platforms": "*"}}
+
+    top = convert_libraries([Library("esphome/A", "1.0.0", None)], backend)
+
+    assert top[0].data == {"name": "esphome/A", "platforms": "*"}
+    assert top[0].dependencies == []
+
+
+@pytest.mark.parametrize("private_dirs", ["src", [1], {"a": "b"}])
+def test_convert_libraries_rejects_malformed_private_include_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, private_dirs: object
+) -> None:
+    _patch_download_without_manifest(monkeypatch, tmp_path, manifest_on_force=False)
+    backend = _backend()
+    backend.manifest_overrides = {
+        "esphome/A": {"ESPHOME": {"PRIVATE_INCLUDE_DIRS": private_dirs}}
+    }
+
+    with pytest.raises(EsphomeError, match="malformed manifest"):
+        convert_libraries([Library("esphome/A", "1.0.0", None)], backend)
+
+
 def test_convert_libraries_raises_when_manifest_missing_after_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
