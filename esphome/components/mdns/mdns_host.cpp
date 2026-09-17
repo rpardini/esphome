@@ -44,15 +44,25 @@ struct AvahiCallbacks {
 
   static void service_group(AvahiEntryGroup *group, AvahiEntryGroupState state, void *userdata) {
     auto *comp = static_cast<MDNSComponent *>(userdata);
+    // Each service has its own group
+    const MDNSService *service = nullptr;
+    for (size_t i = 0; i < comp->services_.size(); i++) {
+      if (comp->avahi_groups_[i] == group) {
+        service = &comp->services_[i];
+        break;
+      }
+    }
+    const char *service_type = service != nullptr ? MDNS_STR_ARG(service->service_type) : "?";
+    const char *proto = service != nullptr ? MDNS_STR_ARG(service->proto) : "?";
     switch (state) {
       case AVAHI_ENTRY_GROUP_ESTABLISHED:
-        ESP_LOGD(TAG, "Services published as '%s'", comp->avahi_instance_name_);
+        ESP_LOGD(TAG, "Service %s.%s published as '%s'", service_type, proto, comp->avahi_instance_name_);
         break;
       case AVAHI_ENTRY_GROUP_COLLISION:
         comp->avahi_rename_services_(avahi_entry_group_get_client(group));
         break;
       case AVAHI_ENTRY_GROUP_FAILURE:
-        ESP_LOGW(TAG, "Publishing a service failed: %s",
+        ESP_LOGW(TAG, "Publishing service %s.%s failed: %s", service_type, proto,
                  avahi_strerror(avahi_client_errno(avahi_entry_group_get_client(group))));
         break;
       default:
