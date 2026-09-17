@@ -1,14 +1,18 @@
 """request_service_enable_disable() only opts in on platforms whose mDNS stack
 can add and remove services after setup, and tells the caller so."""
 
+from unittest.mock import patch
+
 import pytest
 
 from esphome.components import mdns
 from esphome.const import CONF_DISABLED, PlatformFramework
 from esphome.core import CORE
+from esphome.host.pkg_config import PkgConfigPackage
 from tests.component_tests.types import SetCoreConfigCallable
 
 DEFINE = "USE_MDNS_SUPPORTS_ENABLE_DISABLE"
+AVAHI = PkgConfigPackage("avahi-client", "0.8", "", "-lavahi-client -lavahi-common")
 
 
 def _defines() -> set[str]:
@@ -67,4 +71,28 @@ def test_esp32_returns_false_when_services_cannot_be_toggled(
     _set_config(set_core_config, PlatformFramework.ESP32_IDF, config)
 
     assert mdns.request_service_enable_disable() is False
+    assert DEFINE not in _defines()
+
+
+def _host_config(set_core_config: SetCoreConfigCallable, mdns_config: dict) -> None:
+    _set_config(set_core_config, PlatformFramework.HOST_NATIVE, {"mdns": mdns_config})
+
+
+def test_host_with_avahi_adds_define(
+    set_core_config: SetCoreConfigCallable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _host_config(set_core_config, {CONF_DISABLED: False})
+    monkeypatch.setattr(mdns.sys, "platform", "linux")
+    with patch.object(mdns.pkg_config, "find_package", return_value=AVAHI):
+        assert mdns.request_service_enable_disable() is True
+    assert {DEFINE, "USE_MDNS_STORE_SERVICES"} <= _defines()
+
+
+def test_host_without_avahi_returns_false(
+    set_core_config: SetCoreConfigCallable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _host_config(set_core_config, {CONF_DISABLED: False})
+    monkeypatch.setattr(mdns.sys, "platform", "linux")
+    with patch.object(mdns.pkg_config, "find_package", return_value=None):
+        assert mdns.request_service_enable_disable() is False
     assert DEFINE not in _defines()
