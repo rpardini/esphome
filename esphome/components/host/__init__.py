@@ -1,4 +1,5 @@
 import sys
+from typing import Any
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
@@ -15,7 +16,7 @@ from esphome.const import (
 from esphome.core import CORE, EsphomeError
 from esphome.types import ConfigType
 
-from .const import KEY_HOST
+from .const import KEY_HOST, KEY_LIBRARY_MANIFESTS
 
 # force import gpio to register pin schema
 from .gpio import host_pin_to_code  # noqa: F401
@@ -56,6 +57,33 @@ async def to_code(config: ConfigType) -> None:
     cg.add_define("ESPHOME_BOARD", "host")
     cg.add_define("ESPHOME_VARIANT", "HOST")
     cg.add_define(ThreadModel.MULTI_ATOMICS)
+
+
+def add_library(name: str, repository: str, manifest: dict[str, Any]) -> None:
+    """Add a git library whose build layout the calling component describes.
+
+    ``manifest`` takes the shape of a PlatformIO ``library.json`` and is used
+    in place of the library's own manifest (or its absence). It may also set
+    ``ESPHOME.PRIVATE_INCLUDE_DIRS``, include dirs used only for the library's
+    own sources. Use it for libraries without a usable manifest for the host,
+    e.g. one that only describes an ESP-IDF or CMake build.
+    """
+    cg.add_library(name, None, repository)
+    set_library_manifest(name, None, repository, manifest)
+
+
+def set_library_manifest(
+    name: str, version: str | None, repository: str | None, manifest: dict[str, Any]
+) -> None:
+    """Build a library added with ``cg.add_library()`` from ``manifest``.
+
+    The arguments name the library as it was added. ``manifest`` takes the
+    same shape as in add_library() and replaces the library's own manifest.
+    """
+    from esphome.platformio.library import _node_key
+
+    key = _node_key(name, version, repository)[0]
+    CORE.data[KEY_HOST].setdefault(KEY_LIBRARY_MANIFESTS, {})[key] = manifest
 
 
 # Called by __main__.compile_program; True means this platform built the
