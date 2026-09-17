@@ -14,6 +14,8 @@ from esphome.const import (
     CONF_SOURCE,
     CONF_TYPE,
     CONF_WIDTH,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
 )
 from esphome.core import ID
 from esphome.cpp_generator import TemplateArgsType
@@ -144,7 +146,7 @@ CONFIG_SCHEMA = cv.All(
         }
     ),
     runtime_image.validate_runtime_image_settings,
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     _assign_slot_and_register,
 )
 

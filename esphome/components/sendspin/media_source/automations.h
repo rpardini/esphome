@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#if defined(USE_ESP32) && defined(USE_SENDSPIN_PLAYER) && defined(USE_SENDSPIN_CONTROLLER)
+#if (defined(USE_ESP32) || defined(USE_HOST)) && defined(USE_SENDSPIN_PLAYER) && defined(USE_SENDSPIN_CONTROLLER)
 
 #include "esphome/core/automation.h"
 #include "sendspin_media_source.h"

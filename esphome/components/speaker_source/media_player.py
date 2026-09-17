@@ -15,6 +15,8 @@ from esphome.const import (
     CONF_NUM_CHANNELS,
     CONF_SAMPLE_RATE,
     CONF_SPEAKER,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
 )
 from esphome.core import ID
 from esphome.cpp_generator import MockObj, TemplateArgsType
@@ -145,7 +147,7 @@ CONFIG_SCHEMA = cv.All(
     )
     .extend(cv.COMPONENT_SCHEMA)
     .extend(media_player.media_player_schema(SpeakerSourceMediaPlayer)),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     cv.has_at_least_one_key(CONF_ANNOUNCEMENT_PIPELINE, CONF_MEDIA_PIPELINE),
     _validate_no_shared_resources,
     _validate_volume_settings,

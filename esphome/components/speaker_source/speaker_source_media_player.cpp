@@ -1,15 +1,14 @@
 #include "speaker_source_media_player.h"
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) || defined(USE_HOST)
 
+#include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
 #include <algorithm>
 
 namespace esphome::speaker_source {
-
-static constexpr uint32_t MEDIA_CONTROLS_QUEUE_LENGTH = 20;
 
 static const char *const TAG = "speaker_source_media_player";
 
@@ -60,8 +59,6 @@ void SpeakerSourceMediaPlayer::dump_config() {
 
 void SpeakerSourceMediaPlayer::setup() {
   this->state = media_player::MEDIA_PLAYER_STATE_IDLE;
-
-  this->media_control_command_queue_ = xQueueCreate(MEDIA_CONTROLS_QUEUE_LENGTH, sizeof(MediaPlayerControlCommand));
 
   this->pref_ = this->make_entity_preference<VolumeRestoreState>();
 
@@ -193,10 +190,14 @@ size_t SpeakerSourceMediaPlayer::handle_media_output_(uint8_t pipeline, media_so
     if (ps.speaker->get_audio_stream_info() != stream_info) {
       // Setup the speaker to play this stream
       ps.speaker->set_audio_stream_info(stream_info);
-      vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+      delay(timeout_ms);
       return 0;
     }
+#ifdef USE_ESP32
     size_t bytes_written = ps.speaker->play(data, length, pdMS_TO_TICKS(timeout_ms));
+#else
+    size_t bytes_written = ps.speaker->play(data, length, timeout_ms);
+#endif
     if (bytes_written > 0) {
       // Track frames sent to speaker for this source
       ps.pending_frames.fetch_add(stream_info.bytes_to_frames(bytes_written), std::memory_order_relaxed);
@@ -205,7 +206,7 @@ size_t SpeakerSourceMediaPlayer::handle_media_output_(uint8_t pipeline, media_so
   }
 
   // Not the active source - wait for state callback to set us as active when we transition to PLAYING
-  vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+  delay(timeout_ms);
   return 0;
 }
 
@@ -373,7 +374,7 @@ void SpeakerSourceMediaPlayer::queue_command_(MediaPlayerControlCommand::Type ty
   MediaPlayerControlCommand cmd{};
   cmd.type = type;
   cmd.pipeline = pipeline;
-  if (xQueueSend(this->media_control_command_queue_, &cmd, 0) != pdTRUE) {
+  if (!this->media_control_command_queue_.push(cmd)) {
     ESP_LOGE(TAG, "Queue full, command dropped");
   }
 }
@@ -398,12 +399,11 @@ void SpeakerSourceMediaPlayer::queue_play_current_(uint8_t pipeline, uint32_t de
 
 // THREAD CONTEXT: Called from main loop (loop)
 void SpeakerSourceMediaPlayer::process_control_queue_() {
-  MediaPlayerControlCommand control_command{};
-
-  // Use peek to check command without removing it
-  if (xQueuePeek(this->media_control_command_queue_, &control_command, 0) != pdTRUE) {
+  if (this->media_control_command_queue_.empty()) {
     return;
   }
+  // A copy: executing the command may queue more commands
+  MediaPlayerControlCommand control_command = this->media_control_command_queue_.front();
 
   bool command_executed = false;
   uint8_t pipeline = control_command.pipeline;
@@ -487,7 +487,7 @@ void SpeakerSourceMediaPlayer::process_control_queue_() {
 
   // Only remove from queue if successfully executed
   if (command_executed) {
-    xQueueReceive(this->media_control_command_queue_, &control_command, 0);
+    this->media_control_command_queue_.pop();
 
     // Delete the allocated string for PLAY_URI and ENQUEUE_URI commands
     if (control_command.type == MediaPlayerControlCommand::PLAY_URI ||
@@ -709,10 +709,10 @@ void SpeakerSourceMediaPlayer::control(const media_player::MediaPlayerCall &call
       control_command.type = MediaPlayerControlCommand::PLAY_URI;
     }
     // Heap allocation is unavoidable: URIs from Home Assistant are arbitrary-length (media URLs with tokens
-    // can easily exceed 500 bytes). Deleted in process_control_queue_() after the command is consumed. FreeRTOS queues
-    // require items to be copyable, so we store a pointer to the string in the queue rather than the string itself.
+    // can easily exceed 500 bytes). Deleted in process_control_queue_() after the command is consumed. The command
+    // holds the string in a union, so it stores a pointer to the string rather than the string itself.
     control_command.data.uri = new std::string(media_url.value());
-    if (xQueueSend(this->media_control_command_queue_, &control_command, 0) != pdTRUE) {
+    if (!this->media_control_command_queue_.push(control_command)) {
       delete control_command.data.uri;
       ESP_LOGE(TAG, "Queue full, URI dropped");
     }
@@ -745,7 +745,7 @@ void SpeakerSourceMediaPlayer::control(const media_player::MediaPlayerCall &call
         // Queue command for processing in loop()
         control_command.type = MediaPlayerControlCommand::SEND_COMMAND;
         control_command.data.command = cmd.value();
-        if (xQueueSend(this->media_control_command_queue_, &control_command, 0) != pdTRUE) {
+        if (!this->media_control_command_queue_.push(control_command)) {
           ESP_LOGE(TAG, "Queue full, command dropped");
         }
         return;
@@ -893,4 +893,4 @@ void SpeakerSourceMediaPlayer::unshuffle_playlist_(uint8_t pipeline) {
 
 }  // namespace esphome::speaker_source
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 || USE_HOST

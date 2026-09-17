@@ -7,6 +7,8 @@ from esphome.const import (
     CONF_ID,
     CONF_TYPE,
     CONF_YEAR,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
     STATE_CLASS_MEASUREMENT,
     UNIT_MILLISECOND,
 )
@@ -85,7 +87,7 @@ CONFIG_SCHEMA = cv.All(
         },
         key=CONF_TYPE,
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     _request_roles,
 )
 

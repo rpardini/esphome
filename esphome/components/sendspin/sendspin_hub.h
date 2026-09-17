@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) || defined(USE_HOST)
 
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
@@ -344,4 +344,4 @@ class SendspinPollingChild : public PollingComponent, public Parented<SendspinHu
 
 }  // namespace esphome::sendspin_
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 || USE_HOST

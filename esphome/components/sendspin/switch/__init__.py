@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components import switch
 import esphome.config_validation as cv
-from esphome.const import ENTITY_CATEGORY_CONFIG
+from esphome.const import ENTITY_CATEGORY_CONFIG, PLATFORM_ESP32, PLATFORM_HOST
 from esphome.types import ConfigType
 
 from .. import CONF_SENDSPIN_ID, SendspinHub, sendspin_ns
@@ -20,7 +20,7 @@ CONFIG_SCHEMA = cv.All(
     )
     .extend({cv.GenerateID(CONF_SENDSPIN_ID): cv.use_id(SendspinHub)})
     .extend(cv.COMPONENT_SCHEMA),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
 )
 
 

@@ -1,6 +1,6 @@
 #include "sendspin_hub.h"
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) || defined(USE_HOST)
 
 #include "esphome/components/network/util.h"
 #ifdef USE_ETHERNET
@@ -15,7 +15,9 @@
 #include "esphome/core/log.h"
 #include "esphome/core/version.h"
 
+#ifdef USE_ESP32
 #include <esp_log.h>
+#endif
 
 namespace esphome::sendspin_ {
 
@@ -352,4 +354,4 @@ std::optional<uint16_t> SendspinHub::load_static_delay() {
 
 }  // namespace esphome::sendspin_
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 || USE_HOST

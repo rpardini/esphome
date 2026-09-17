@@ -1,8 +1,9 @@
 #include "sendspin_media_source.h"
 
-#if defined(USE_ESP32) && defined(USE_SENDSPIN_CONTROLLER) && defined(USE_SENDSPIN_PLAYER)
+#if (defined(USE_ESP32) || defined(USE_HOST)) && defined(USE_SENDSPIN_CONTROLLER) && defined(USE_SENDSPIN_PLAYER)
 
 #include "esphome/components/audio/audio.h"
+#include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
 #include <cmath>
@@ -168,14 +169,14 @@ void SendspinMediaSource::notify_audio_played(uint32_t frames, int64_t timestamp
 // THREAD CONTEXT: Sendspin sync task background thread. May block up to timeout_ms.
 size_t SendspinMediaSource::on_audio_write(uint8_t *data, size_t length, uint32_t timeout_ms) {
   if (!this->has_listener() || (this->get_state() != media_source::MediaSourceState::PLAYING)) {
-    vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+    delay(timeout_ms);
     return 0;
   }
 
   // PlayerRole::get_current_stream_params() is safe to call from the sync task.
   auto &params = this->player_role_->get_current_stream_params();
   if (!params.bit_depth.has_value() || !params.channels.has_value() || !params.sample_rate.has_value()) {
-    vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+    delay(timeout_ms);
     return 0;
   }
   audio::AudioStreamInfo stream_info(*params.bit_depth, *params.channels, *params.sample_rate);
@@ -211,4 +212,4 @@ void SendspinMediaSource::on_mute_changed(bool muted) { this->request_mute_(mute
 
 }  // namespace esphome::sendspin_
 
-#endif  // USE_ESP32 && USE_SENDSPIN_PLAYER && USE_SENDSPIN_CONTROLLER
+#endif  // (USE_ESP32 || USE_HOST) && USE_SENDSPIN_PLAYER && USE_SENDSPIN_CONTROLLER

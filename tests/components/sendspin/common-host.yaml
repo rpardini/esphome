@@ -1,0 +1,32 @@
+# Every sendspin platform together: each host build compiles sendspin-cpp and its libraries from source
+sendspin:
+  id: sendspin_hub_id
+  manufacturer: Test Manufacturer
+  model: Test Model
+  firmware_version: 1.2.3
+
+media_source:
+  - platform: sendspin
+    id: media_source_id
+    buffer_size: 500000
+    initial_static_delay: 5ms
+    static_delay_adjustable: true
+    fixed_delay: 480us
+
+media_player:
+  - platform: sendspin
+    id: media_player_id
+
+sensor:
+  - platform: sendspin
+    name: "Sendspin Track Progress"
+    type: track_progress
+
+text_sensor:
+  - platform: sendspin
+    name: "Title"
+    type: title
+
+switch:
+  - platform: sendspin
+    name: "Sendspin Enabled"
