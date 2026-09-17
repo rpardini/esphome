@@ -1,0 +1,2 @@
+packages:
+  host_audio: !include common.yaml
