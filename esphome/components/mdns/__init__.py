@@ -1,3 +1,6 @@
+import logging
+import sys
+
 import esphome.codegen as cg
 from esphome.components.const import CONF_BORDER_ROUTER
 from esphome.components.esp32 import add_idf_component, add_idf_sdkconfig_option
@@ -20,7 +23,10 @@ from esphome.core import CORE, Lambda, coroutine_with_priority
 from esphome.coroutine import CoroPriority
 from esphome.cpp_generator import LambdaExpression
 import esphome.final_validate as fv
+from esphome.host import pkg_config
 from esphome.types import ConfigType
+
+_LOGGER = logging.getLogger(__name__)
 
 CODEOWNERS = ["@esphome/core"]
 DEPENDENCIES = ["network"]
@@ -44,7 +50,13 @@ def _remove_id_if_disabled(value: ConfigType) -> ConfigType:
     return value
 
 
+CONF_AVAHI = "avahi"
 CONF_TXT = "txt"
+
+AVAHI_PACKAGE = "avahi-client"
+AVAHI_INSTALL_HINT = "'apt install libavahi-client-dev'"
+# CORE.data key caching whether the host build publishes through Avahi
+_KEY_HOST_AVAHI = "mdns_host_avahi"
 
 SERVICE_SCHEMA = cv.Schema(
     {
@@ -65,6 +77,23 @@ def _consume_mdns_sockets(config: ConfigType) -> ConfigType:
 
     # mDNS needs 2 sockets (IPv4 + IPv6 multicast)
     socket.consume_sockets(2, "mdns", socket.SocketType.UDP)(config)
+    return config
+
+
+def _validate_avahi(config: ConfigType) -> ConfigType:
+    if (avahi := config.get(CONF_AVAHI)) is None:
+        return config
+    if not CORE.is_host:
+        raise cv.Invalid(
+            f"'{CONF_AVAHI}' is only available on the host platform", path=[CONF_AVAHI]
+        )
+    if avahi and not config[CONF_DISABLED]:
+        if not sys.platform.startswith("linux"):
+            raise cv.Invalid(
+                "Publishing through Avahi needs a Linux build machine",
+                path=[CONF_AVAHI],
+            )
+        pkg_config.require_package(AVAHI_PACKAGE, "mdns avahi", AVAHI_INSTALL_HINT)
     return config
 
 
@@ -95,8 +124,11 @@ CONFIG_SCHEMA = cv.All(
             cv.GenerateID(): cv.declare_id(MDNSComponent),
             cv.Optional(CONF_DISABLED, default=False): cv.boolean,
             cv.Optional(CONF_SERVICES, default=[]): cv.ensure_list(SERVICE_SCHEMA),
+            # Publish through the Avahi daemon on Linux hosts; found automatically when omitted
+            cv.Optional(CONF_AVAHI): cv.boolean,
         }
     ),
+    _validate_avahi,
     _remove_id_if_disabled,
     _consume_mdns_sockets,
 )
@@ -195,11 +227,39 @@ def _openthread_srp_registers_services() -> bool:
     return openthread_config is not None and CONF_BORDER_ROUTER not in openthread_config
 
 
+def host_avahi_enabled() -> bool:
+    """Whether the host build publishes mDNS services through the Avahi daemon.
+
+    With ``avahi`` unset, Avahi is used when the build machine is Linux and has
+    the avahi-client development package; otherwise services are not published.
+    """
+    if (cached := CORE.data.get(_KEY_HOST_AVAHI)) is not None:
+        return cached
+    mdns_config = CORE.config.get(DOMAIN)
+    enabled = (
+        CORE.is_host
+        and mdns_config is not None
+        and not mdns_config[CONF_DISABLED]
+        and mdns_config.get(CONF_AVAHI, True)
+        and sys.platform.startswith("linux")
+    )
+    if enabled and pkg_config.find_package(AVAHI_PACKAGE) is None:
+        # avahi: true was checked during validation, so this is the automatic case
+        _LOGGER.info(
+            "mDNS services are not published: install %s to publish them through Avahi",
+            AVAHI_INSTALL_HINT,
+        )
+        enabled = False
+    CORE.data[_KEY_HOST_AVAHI] = enabled
+    return enabled
+
+
 def request_service_enable_disable() -> bool:
     """Request MDNSComponent::set_service_enabled() support.
 
-    ESP32 only, not with the OpenThread SRP client. Returns True when the
-    USE_MDNS_SUPPORTS_ENABLE_DISABLE define was added; guard C++ usage with it.
+    ESP32 (not with the OpenThread SRP client), or the host publishing through
+    Avahi. Returns True when the USE_MDNS_SUPPORTS_ENABLE_DISABLE define was
+    added; guard C++ usage with it.
 
     Public API for external components. Do not remove.
     """
@@ -207,7 +267,7 @@ def request_service_enable_disable() -> bool:
     if (
         mdns_config is None
         or mdns_config[CONF_DISABLED]
-        or not CORE.is_esp32
+        or not (CORE.is_esp32 or host_avahi_enabled())
         or _openthread_srp_registers_services()
     ):
         return False
@@ -256,6 +316,13 @@ async def to_code(config: ConfigType) -> None:
             add_idf_sdkconfig_option("CONFIG_MDNS_PREDEF_NETIF_AP", False)
 
     cg.add_define("USE_MDNS")
+
+    if host_avahi_enabled():
+        cg.add_define("USE_MDNS_AVAHI")
+        # The Avahi client re-registers services after daemon restarts and name collisions
+        enable_mdns_storage()
+        pkg_config.add_package_build_flags(pkg_config.find_package(AVAHI_PACKAGE))
+        cg.add_build_flag("-pthread")
 
     # Calculate compile-time service count
     service_count = sum(

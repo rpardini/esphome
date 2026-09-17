@@ -1,0 +1,11 @@
+api:
+
+mdns:
+  avahi: true
+  services:
+    - service: _test_service
+      protocol: _tcp
+      port: 8888
+      txt:
+        static_string: Anything
+        templated_string: !lambda return "Something else";
