@@ -1,0 +1,45 @@
+host_audio:
+  id: host_audio_id
+
+speaker:
+  - platform: host_audio
+    id: host_speaker
+    device: default
+    latency: low
+    buffer_duration: 250ms
+    timeout: never
+  - platform: host_audio
+    id: host_other_speaker
+    device: 0
+    latency: 80ms
+
+microphone:
+  - platform: host_audio
+    id: host_microphone
+    sample_rate: 16000
+    bits_per_sample: 16bit
+    channel: mono
+    on_data:
+      - logger.log:
+          format: "Captured %zu bytes"
+          args: [x.size()]
+          level: VERY_VERBOSE
+
+sendspin:
+  id: sendspin_hub_id
+
+media_source:
+  - platform: sendspin
+    id: sendspin_source
+
+media_player:
+  - platform: speaker_source
+    id: host_media_player
+    name: Host Media Player
+    media_pipeline:
+      speaker: host_speaker
+      format: FLAC
+      sample_rate: 48000
+      num_channels: 2
+      sources:
+        - sendspin_source
