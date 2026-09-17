@@ -13,7 +13,7 @@ regardless of which toolchain consumes the result.
 """
 
 from collections import deque
-from collections.abc import Callable, Hashable, Iterable
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 import glob
@@ -91,6 +91,9 @@ ESPHOME_DATA_EXTRA_CMAKE_KEY = "EXTRA_CMAKE"
 # Captured extra-script LINKFLAGS; kept apart from build.flags so they reach
 # the link line (target_link_options), not target_compile_options
 ESPHOME_DATA_LINK_FLAGS_KEY = "LINK_FLAGS"
+# Include dirs for the library's own sources only, kept off the global
+# include path; set by component-supplied manifests
+ESPHOME_DATA_PRIVATE_INCLUDE_DIRS_KEY = "PRIVATE_INCLUDE_DIRS"
 
 
 class Source:
@@ -372,6 +375,9 @@ class LibraryBackend:
     # PlatformIO does (its defaults: src/ or the root, plus include/). Off
     # for backends whose emitted build files need the manifest.
     manifest_optional: bool = False
+    # Component-supplied manifests keyed by node key (see _node_key); each
+    # replaces the downloaded manifest, or stands in for a missing one
+    manifest_overrides: Mapping[str, dict] = field(default_factory=dict)
 
 
 def ensure_list[T](obj: T | list[T]) -> list[T]:
@@ -506,6 +512,11 @@ def _valid_manifest_shape(data: Any) -> bool:
         isinstance(build, dict)
         and isinstance(esphome_data, dict)
         and isinstance(esphome_data.get(ESPHOME_DATA_LINK_FLAGS_KEY, []), list)
+        and isinstance(
+            private_dirs := esphome_data.get(ESPHOME_DATA_PRIVATE_INCLUDE_DIRS_KEY, []),
+            list,
+        )
+        and all(isinstance(d, str) for d in private_dirs)
         and isinstance(build.get("srcDir", ""), str)
         and isinstance(build.get("includeDir", ""), str)
         and isinstance(build.get("srcFilter", ""), (str, list))
@@ -1248,8 +1259,10 @@ def convert_libraries(
             library_properties_path = source_dir / "library.properties"
             has_json = library_json_path.is_file()
             has_properties = library_properties_path.is_file()
+            override = backend.manifest_overrides.get(key)
             if (
-                not has_json
+                override is None
+                and not has_json
                 and not has_properties
                 and not node.is_local
                 and not backend.manifest_optional
@@ -1267,7 +1280,10 @@ def convert_libraries(
                 component.download(force=True, salt=salt, namespace=backend.cache_key)
                 has_json = library_json_path.is_file()
                 has_properties = library_properties_path.is_file()
-            if has_json:
+            if override is not None:
+                # The component describes the build layout itself
+                component.data = {"name": component.name, **override}
+            elif has_json:
                 component.data = parse_library_json(library_json_path)
             elif has_properties:
                 component.data = parse_library_properties(library_properties_path)

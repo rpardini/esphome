@@ -169,6 +169,44 @@ def test_library_info_flags_parsing(tmp_path: Path) -> None:
     assert lib.link_flags == ["-Wl,--wrap=malloc"]
 
 
+def test_library_info_private_include_dirs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Private include dirs reach only the library's own compile lines, and
+    keep its source dir off the global include path."""
+    read_path = tmp_path / "lib"
+    (read_path / "src" / "impl").mkdir(parents=True)
+    (read_path / "src" / "a.cpp").write_text("")
+    (read_path / "include").mkdir()
+    data = {
+        "build": {"srcDir": "src", "includeDir": "include"},
+        "ESPHOME": {"PRIVATE_INCLUDE_DIRS": ["src", "src/impl", "missing"]},
+    }
+    lib = component._library_info("x", read_path, data)
+    assert lib.include_dirs == [(read_path / "include").resolve()]
+    assert lib.flags == [
+        f"-I{(read_path / 'src').resolve()}",
+        f"-I{(read_path / 'src' / 'impl').resolve()}",
+    ]
+    assert [p.name for p in lib.sources] == ["a.cpp"]
+    assert "include dir missing which does not exist" in caplog.text
+
+
+def test_resolve_libraries_passes_manifest_overrides(tmp_path: Path) -> None:
+    _add_library("Foo", None, "https://github.com/x/foo.git")
+    overrides = {"x/foo": {"platforms": "*"}}
+    with patch.object(component, "convert_libraries", return_value=[]) as convert:
+        component.resolve_libraries(
+            None,
+            pio_platform="native",
+            board_mcu="host",
+            cache_key="host",
+            framework=None,
+            manifest_overrides=overrides,
+        )
+    assert convert.call_args.args[1].manifest_overrides == overrides
+
+
 def test_library_info_missing_link_dir_warns(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

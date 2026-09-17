@@ -69,3 +69,17 @@ def test_run_compile_hook_raises_on_failure() -> None:
         pytest.raises(EsphomeError, match="Host build failed"),
     ):
         host.run_compile(object(), {"esphome": {}})
+
+
+def test_add_library_records_manifest_by_node_key() -> None:
+    CORE.data[KEY_CORE][KEY_TARGET_PLATFORM] = PLATFORM_HOST
+    CORE.data[host.KEY_HOST] = {}
+    manifest = {"platforms": "*", "build": {"srcDir": "src"}}
+    host.add_library(
+        "sendspin-cpp", "https://github.com/sendspin/sendspin-cpp.git#v0.8.0", manifest
+    )
+    library = CORE.platformio_libraries["sendspin-cpp"]
+    assert library.repository == "https://github.com/sendspin/sendspin-cpp.git#v0.8.0"
+    assert CORE.data[host.KEY_HOST][host.KEY_LIBRARY_MANIFESTS] == {
+        "sendspin/sendspin-cpp": manifest
+    }

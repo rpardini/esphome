@@ -128,6 +128,7 @@ def _resolve_host_libraries() -> list[ArduinoLibrary]:
     if not CORE.platformio_libraries:
         return []
     from esphome.arduino.library import resolve_libraries
+    from esphome.components.host.const import KEY_HOST, KEY_LIBRARY_MANIFESTS
 
     return resolve_libraries(
         None,
@@ -136,6 +137,7 @@ def _resolve_host_libraries() -> list[ArduinoLibrary]:
         cache_key=LIBRARY_CACHE_KEY,
         framework=None,
         manifest_optional=True,
+        manifest_overrides=CORE.data.get(KEY_HOST, {}).get(KEY_LIBRARY_MANIFESTS),
     )
 
 

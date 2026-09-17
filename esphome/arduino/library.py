@@ -14,6 +14,7 @@ manifest ``extraScript``; manifest ``-I`` flags join the global include path;
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
@@ -27,6 +28,7 @@ from esphome.platformio.library import (
     DEFAULT_BUILD_SRC_FILTER,
     ESPHOME_DATA_KEY,
     ESPHOME_DATA_LINK_FLAGS_KEY,
+    ESPHOME_DATA_PRIVATE_INCLUDE_DIRS_KEY,
     LIBRARY_HEADER_SUFFIXES,
     SRC_FILE_EXTENSIONS,
     ConvertedLibrary,
@@ -174,6 +176,7 @@ def _resolve_include_dirs(
     name: str,
     read_path: Path,
     lib: ArduinoLibrary,
+    data: dict,
     build: dict,
     src_dir: str,
     include_flags: list[str],
@@ -181,19 +184,33 @@ def _resolve_include_dirs(
     include_dir = build.get("includeDir", DEFAULT_BUILD_INCLUDE_DIR)
     if not isinstance(include_dir, str):
         raise EsphomeError(f"Library {name} has a malformed includeDir")
-    for d, explicit in [
-        (include_dir, "includeDir" in build),
-        (src_dir, False),  # _resolve_src_dir already validated it
-        *((flag, True) for flag in include_flags),
-    ]:
+    private_dirs = data.get(ESPHOME_DATA_KEY, {}).get(
+        ESPHOME_DATA_PRIVATE_INCLUDE_DIRS_KEY
+    )
+
+    def _existing(d: str, explicit: bool) -> Path | None:
         if (path := (read_path / d)).is_dir():
-            lib.include_dirs.append(path.resolve())
-        elif explicit:
+            return path.resolve()
+        if explicit:
             # Warn-and-drop (unlike srcDir): a missing include dir is
             # harmless until a header is needed, and the compile names it
             _LOGGER.warning(
                 "Library %s declares include dir %s which does not exist", name, d
             )
+        return None
+
+    global_dirs = [(include_dir, "includeDir" in build)]
+    if private_dirs is None:
+        # A manifest listing private dirs keeps its source dir, and the
+        # internal headers in it, off the global include path
+        global_dirs.append((src_dir, False))  # _resolve_src_dir validated it
+    global_dirs.extend((flag, True) for flag in include_flags)
+    for d, explicit in global_dirs:
+        if (path := _existing(d, explicit)) is not None:
+            lib.include_dirs.append(path)
+    for d in private_dirs or []:
+        if (path := _existing(d, True)) is not None:
+            lib.flags.append(f"-I{path}")
 
 
 def _collect_lib_sources(
@@ -245,7 +262,7 @@ def _library_info(name: str, read_path: Path, data: dict) -> ArduinoLibrary:
     include_flags = _classify_build_flags(
         name, read_path, lib, lex_build_flags(build.get("flags", []), f"library {name}")
     )
-    _resolve_include_dirs(name, read_path, lib, build, src_dir, include_flags)
+    _resolve_include_dirs(name, read_path, lib, data, build, src_dir, include_flags)
     _collect_lib_sources(name, read_path, lib, src_dir, src_filter)
     return lib
 
@@ -351,6 +368,7 @@ def resolve_libraries(
     cache_key: str,
     framework: str | None = "arduino",
     manifest_optional: bool = False,
+    manifest_overrides: Mapping[str, dict] | None = None,
 ) -> list[ArduinoLibrary]:
     """Resolve every ``cg.add_library()`` entry into an :class:`ArduinoLibrary`.
 
@@ -361,7 +379,8 @@ def resolve_libraries(
     A None ``framework_path`` means no core-bundled libraries exist (the
     host build): every name resolves from the registry.
     ``manifest_optional`` accepts libraries without a manifest, built with
-    PlatformIO's default layout.
+    PlatformIO's default layout. ``manifest_overrides`` maps a library's
+    node key to a manifest used in place of the downloaded one.
 
     The returned list is not topologically sorted, so the caller must link
     the archives inside one ``--start-group``/``--end-group`` pair (the
@@ -521,6 +540,7 @@ def resolve_libraries(
         # _add_bundled_dependencies adds them after emit
         provides=_provided,
         manifest_optional=manifest_optional,
+        manifest_overrides=manifest_overrides or {},
     )
     if external:
         convert_libraries(external, backend)

@@ -10,6 +10,7 @@ import pytest
 
 from esphome.arduino.library import ArduinoLibrary
 from esphome.build_gen import host as build_gen
+from esphome.components.host.const import KEY_HOST, KEY_LIBRARY_MANIFESTS
 from esphome.const import KEY_CORE, KEY_TARGET_PLATFORM, PLATFORM_HOST
 from esphome.core import CORE, EsphomeError, Library
 from esphome.host.toolchain import HostCompilers
@@ -136,7 +137,18 @@ def test_resolve_host_libraries_is_framework_less() -> None:
         cache_key="host",
         framework=None,
         manifest_optional=True,
+        manifest_overrides=None,
     )
+
+
+def test_resolve_host_libraries_passes_component_manifests() -> None:
+    CORE.data[KEY_HOST] = {KEY_LIBRARY_MANIFESTS: {"x/foo": {"platforms": "*"}}}
+    CORE.add_library(Library(name="foo", version=None, repository="https://x/foo"))
+    with patch("esphome.arduino.library.resolve_libraries", return_value=[]) as resolve:
+        build_gen._resolve_host_libraries()
+    assert resolve.call_args.kwargs["manifest_overrides"] == {
+        "x/foo": {"platforms": "*"}
+    }
 
 
 def test_write_project_requires_generated_sources(tmp_path: Path) -> None:
