@@ -1,0 +1,27 @@
+# The keep-alive wiring this component exists for: a tone on its own mixer source, at a level the
+# media volume cannot touch because the media source keeps its volume to itself.
+speaker:
+  - platform: i2s_audio
+    id: mixer_output_speaker
+    i2s_audio_id: i2s_audio_bus
+    dac_type: external
+    i2s_dout_pin: ${dout_pin}
+    bits_per_sample: 16bit
+    channel: stereo
+
+  - platform: mixer
+    id: mixing_speaker
+    output_speaker: mixer_output_speaker
+    num_channels: 2
+    source_speakers:
+      - id: media_input
+        volume_scope: source
+      - id: keepalive_input
+        timeout: never
+
+tone_generator:
+  - id: keepalive_tone
+    speaker: keepalive_input
+    frequency: !lambda "return 4.0f;"
+    amplitude: !lambda "return 0.5f;"
+    sample_rate: 48000
