@@ -1,0 +1,16 @@
+host_audio:
+  id: tone_host_audio_id
+
+speaker:
+  - platform: host_audio
+    id: host_tone_speaker
+    device: default
+    latency: low
+
+tone_generator:
+  - id: host_tone_generator_id
+    speaker: host_tone_speaker
+    frequency: 4Hz
+    amplitude: 50%
+    sample_rate: 48000
+    num_channels: 2
