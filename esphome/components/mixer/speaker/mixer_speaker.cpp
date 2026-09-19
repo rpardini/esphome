@@ -24,6 +24,14 @@ static const uint32_t MIXER_AUTO_STOP_DEBOUNCE_MS = 200;
 
 static const size_t TASK_STACK_SIZE = 4096;
 
+#ifdef USE_MIXER_SOURCE_VOLUME
+// Matches the output speaker's software volume control, so moving a source to its own volume does not
+// change how the control feels: (0.0, 1.0] maps linearly to a dB reduction over this range.
+static constexpr float SOFTWARE_VOLUME_MIN_DB = -49.0f;
+// Rate at which a source's software gain moves toward a new target.
+static constexpr uint32_t GAIN_RAMP_MS_PER_DB = 1;
+#endif
+
 static const char *const TAG = "speaker_mixer";
 
 // Event bits for SourceSpeaker command processing
@@ -282,18 +290,61 @@ bool SourceSpeaker::has_buffered_data() const {
 }
 
 void SourceSpeaker::set_mute_state(bool mute_state) {
+#ifdef USE_MIXER_SOURCE_VOLUME
+  if (this->local_volume_) {
+    speaker::Speaker::set_mute_state(mute_state);
+    this->post_software_gain_(this->audio_stream_info_.ms_to_samples(GAIN_RAMP_MS_PER_DB));
+    return;
+  }
+#endif
   this->mute_state_ = mute_state;
   this->parent_->get_output_speaker()->set_mute_state(mute_state);
 }
 
-bool SourceSpeaker::get_mute_state() { return this->parent_->get_output_speaker()->get_mute_state(); }
+bool SourceSpeaker::get_mute_state() {
+#ifdef USE_MIXER_SOURCE_VOLUME
+  if (this->local_volume_) {
+    return this->mute_state_;
+  }
+#endif
+  return this->parent_->get_output_speaker()->get_mute_state();
+}
 
 void SourceSpeaker::set_volume(float volume) {
+#ifdef USE_MIXER_SOURCE_VOLUME
+  if (this->local_volume_) {
+    speaker::Speaker::set_volume(volume);
+    this->post_software_gain_(this->audio_stream_info_.ms_to_samples(GAIN_RAMP_MS_PER_DB));
+    return;
+  }
+#endif
   this->volume_ = volume;
   this->parent_->get_output_speaker()->set_volume(volume);
 }
 
-float SourceSpeaker::get_volume() { return this->parent_->get_output_speaker()->get_volume(); }
+float SourceSpeaker::get_volume() {
+#ifdef USE_MIXER_SOURCE_VOLUME
+  if (this->local_volume_) {
+    return this->volume_;
+  }
+#endif
+  return this->parent_->get_output_speaker()->get_volume();
+}
+
+#ifdef USE_MIXER_SOURCE_VOLUME
+void SourceSpeaker::post_software_gain_(uint32_t rate_samples) {
+  // Same curve the output speaker would have applied: (0.0, 1.0] is linear in dB over this range.
+  float target_db;
+  if (this->is_silent_()) {
+    target_db = -INFINITY;
+  } else if (this->volume_ >= 1.0f) {
+    target_db = 0.0f;
+  } else {
+    target_db = remap<float, float>(this->volume_, 0.0f, 1.0f, SOFTWARE_VOLUME_MIN_DB, 0.0f);
+  }
+  this->volume_ramp_.set_target_db_at_rate(target_db, rate_samples);
+}
+#endif
 
 size_t SourceSpeaker::process_data_from_source(std::shared_ptr<audio::RingBufferAudioSource> &audio_source,
                                                TickType_t ticks_to_wait) {
@@ -306,9 +357,13 @@ size_t SourceSpeaker::process_data_from_source(std::shared_ptr<audio::RingBuffer
 
   uint32_t samples_to_duck = this->audio_stream_info_.bytes_to_samples(bytes_read);
   if (samples_to_duck > 0) {
-    this->ducking_ramp_.process(audio_source->mutable_data(),
-                                static_cast<uint8_t>(this->audio_stream_info_.get_bits_per_sample() / 8),
-                                samples_to_duck);
+    const uint8_t bytes_per_sample = static_cast<uint8_t>(this->audio_stream_info_.get_bits_per_sample() / 8);
+#ifdef USE_MIXER_SOURCE_VOLUME
+    // Volume before ducking, so ducking reads as a reduction relative to the level this source plays at.
+    // A ramp settled at unity is a no-op, so sources that pass volume through cost nothing here.
+    this->volume_ramp_.process(audio_source->mutable_data(), bytes_per_sample, samples_to_duck);
+#endif
+    this->ducking_ramp_.process(audio_source->mutable_data(), bytes_per_sample, samples_to_duck);
   }
 
   return bytes_read;
