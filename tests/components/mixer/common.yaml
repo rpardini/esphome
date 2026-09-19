@@ -5,6 +5,9 @@ esphome:
           id: source_speaker_1_id
           decibel_reduction: 255
           duration: 1s
+      - speaker.volume_set:
+          id: source_speaker_1_id
+          volume: 50%
 
 speaker:
   - platform: i2s_audio
@@ -20,4 +23,5 @@ speaker:
     num_channels: 2
     source_speakers:
       - id: source_speaker_1_id
+        volume_scope: source
       - id: source_speaker_2_id

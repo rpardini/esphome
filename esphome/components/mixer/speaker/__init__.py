@@ -31,6 +31,10 @@ SourceSpeaker = mixer_speaker_ns.class_("SourceSpeaker", cg.Component, speaker.S
 CONF_DECIBEL_REDUCTION = "decibel_reduction"
 CONF_QUEUE_MODE = "queue_mode"
 CONF_SOURCE_SPEAKERS = "source_speakers"
+CONF_VOLUME_SCOPE = "volume_scope"
+
+VOLUME_SCOPE_OUTPUT = "output"
+VOLUME_SCOPE_SOURCE = "source"
 
 DuckingApplyAction = mixer_speaker_ns.class_(
     "DuckingApplyAction", automation.Action, cg.Parented.template(SourceSpeaker)
@@ -46,6 +50,11 @@ SOURCE_SPEAKER_SCHEMA = speaker.SPEAKER_SCHEMA.extend(
         cv.Optional(CONF_TIMEOUT, default="500ms"): cv.Any(
             cv.positive_time_period_milliseconds,
             cv.one_of(CONF_NEVER, lower=True),
+        ),
+        # "output" hands volume and mute to the output speaker, where they scale every source at once.
+        # "source" keeps them on this source, so the others are left alone.
+        cv.Optional(CONF_VOLUME_SCOPE, default=VOLUME_SCOPE_OUTPUT): cv.one_of(
+            VOLUME_SCOPE_OUTPUT, VOLUME_SCOPE_SOURCE, lower=True
         ),
     }
 )
@@ -140,6 +149,11 @@ async def to_code(config: ConfigType) -> None:
 
         if speaker_config[CONF_TIMEOUT] != CONF_NEVER:
             cg.add(source_speaker.set_timeout(speaker_config[CONF_TIMEOUT]))
+
+        if speaker_config[CONF_VOLUME_SCOPE] == VOLUME_SCOPE_SOURCE:
+            # Compiles the per-source gain ramp out entirely when nothing asks for it
+            cg.add_define("USE_MIXER_SOURCE_VOLUME")
+            cg.add(source_speaker.set_local_volume(True))
 
         await cg.register_component(source_speaker, speaker_config)
         await cg.register_parented(source_speaker, config[CONF_ID])

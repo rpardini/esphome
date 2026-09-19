@@ -20,7 +20,8 @@
 namespace esphome::mixer_speaker {
 
 /* Classes for mixing several source speaker audio streams and writing it to another speaker component.
- *  - Volume controls are passed through to the output speaker
+ *  - Volume controls are passed through to the output speaker, unless a source is configured to keep its own volume,
+ *    in which case that source's volume and mute are applied to its own audio alongside ducking
  *  - Source speaker commands are signaled via event group bits and processed in its loop function to ensure thread
  * safety
  *  - Directly handles pausing at the SourceSpeaker level; pause state is not passed through to the output speaker.
@@ -59,13 +60,18 @@ class SourceSpeaker final : public speaker::Speaker, public Component {
 
   bool has_buffered_data() const override;
 
-  /// @brief Mute state changes are passed to the parent's output speaker
+  /// @brief Mute state changes are passed to the parent's output speaker, unless this source keeps its own volume
   void set_mute_state(bool mute_state) override;
   bool get_mute_state() override;
 
-  /// @brief Volume state changes are passed to the parent's output speaker
+  /// @brief Volume state changes are passed to the parent's output speaker, unless this source keeps its own volume
   void set_volume(float volume) override;
   float get_volume() override;
+
+#ifdef USE_MIXER_SOURCE_VOLUME
+  /// @brief Applies volume and mute to this source's own audio instead of to the parent's output speaker.
+  void set_local_volume(bool local_volume) { this->local_volume_ = local_volume; }
+#endif
 
   void set_pause_state(bool pause_state) override { this->pause_state_ = pause_state; }
   bool get_pause_state() const override { return this->pause_state_; }
@@ -108,7 +114,19 @@ class SourceSpeaker final : public speaker::Speaker, public Component {
 
   bool pause_state_{false};
 
+  // Each ramp has a single poster on the main loop and is processed only by the mixer task, which is
+  // what GainRamp's request mailbox allows.
   esp_audio_libs::gain::GainRamp ducking_ramp_;
+
+#ifdef USE_MIXER_SOURCE_VOLUME
+  /// @brief Posts this source's volume and mute state to the volume ramp. Main loop only.
+  void post_software_gain_(uint32_t rate_samples);
+
+  // Separate from ducking_ramp_ because the two want different ramp timings: ducking transitions over
+  // a caller-given duration, volume moves at a fixed rate whatever the distance.
+  esp_audio_libs::gain::GainRamp volume_ramp_;
+  bool local_volume_{false};
+#endif
 
   std::atomic<uint32_t> pending_playback_frames_{0};
   std::atomic<uint32_t> playback_delay_frames_{0};  // Frames in output pipeline when this source started contributing
