@@ -1817,6 +1817,55 @@ register_protocol_action(
 )
 
 
+# RC6 MCE
+RC6MCEData, RC6MCEBinarySensor, RC6MCETrigger, _, RC6MCEDumper = declare_protocol(
+    "RC6MCE"
+)
+RC6_MCE_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_ADDRESS, default=0x800F): cv.hex_uint16_t,
+        cv.Required(CONF_COMMAND): cv.hex_uint16_t,
+    }
+)
+
+
+@register_binary_sensor("rc6_mce", RC6MCEBinarySensor, RC6_MCE_SCHEMA)
+def rc6_mce_binary_sensor(var: MockObj, config: ConfigType) -> None:
+    cg.add(
+        var.set_data(
+            cg.StructInitializer(
+                RC6MCEData,
+                ("address", config[CONF_ADDRESS]),
+                ("command", config[CONF_COMMAND]),
+                ("toggle", 0),
+            )
+        )
+    )
+
+
+@register_trigger("rc6_mce", RC6MCETrigger, RC6MCEData)
+def rc6_mce_trigger(var: MockObj, config: ConfigType) -> None:
+    """The trigger takes no options beyond the automation."""
+
+
+@register_dumper("rc6_mce", RC6MCEDumper)
+def rc6_mce_dumper(var: MockObj, config: ConfigType) -> None:
+    """The dumper takes no options."""
+
+
+register_protocol_action(
+    "rc6_mce",
+    "RC6MCE",
+    RC6_MCE_SCHEMA,
+    (CONF_ADDRESS, "address", cg.uint16),
+    (CONF_COMMAND, "command", cg.uint16),
+    # Each action flips its own toggle, starting at 0: the lambda's static is per action
+    automation.ApplyCall(
+        "data.toggle = []() {{ static uint8_t toggle = 1; return toggle ^= 1; }}()"
+    ),
+)
+
+
 # RC Switch Raw
 RC_SWITCH_TIMING_SCHEMA = cv.All([cv.uint8_t], cv.Length(min=2, max=2))
 
