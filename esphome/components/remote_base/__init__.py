@@ -1487,6 +1487,50 @@ async def rc6_action(var, config, args):
     cg.add(var.set_command(template_))
 
 
+# RC6 MCE
+RC6MCEData, RC6MCEBinarySensor, RC6MCETrigger, RC6MCEAction, RC6MCEDumper = (
+    declare_protocol("RC6MCE")
+)
+RC6_MCE_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_ADDRESS, default=0x800F): cv.hex_uint16_t,
+        cv.Required(CONF_COMMAND): cv.hex_uint16_t,
+    }
+)
+
+
+@register_binary_sensor("rc6_mce", RC6MCEBinarySensor, RC6_MCE_SCHEMA)
+def rc6_mce_binary_sensor(var, config):
+    cg.add(
+        var.set_data(
+            cg.StructInitializer(
+                RC6MCEData,
+                ("address", config[CONF_ADDRESS]),
+                ("command", config[CONF_COMMAND]),
+                ("toggle", 0),
+            )
+        )
+    )
+
+
+@register_trigger("rc6_mce", RC6MCETrigger, RC6MCEData)
+def rc6_mce_trigger(var, config):
+    pass
+
+
+@register_dumper("rc6_mce", RC6MCEDumper)
+def rc6_mce_dumper(var, config):
+    pass
+
+
+@register_action("rc6_mce", RC6MCEAction, RC6_MCE_SCHEMA)
+async def rc6_mce_action(var, config, args):
+    template_ = await cg.templatable(config[CONF_ADDRESS], args, cg.uint16)
+    cg.add(var.set_address(template_))
+    template_ = await cg.templatable(config[CONF_COMMAND], args, cg.uint16)
+    cg.add(var.set_command(template_))
+
+
 # RC Switch Raw
 RC_SWITCH_TIMING_SCHEMA = cv.All([cv.uint8_t], cv.Length(min=2, max=2))
 
