@@ -142,6 +142,12 @@ button:
         address: 0x00
         command: 0x0B
   - platform: template
+    name: RC6 MCE
+    on_press:
+      remote_transmitter.transmit_rc6_mce:
+        address: 0x800F
+        command: 0x040C
+  - platform: template
     name: RC5 Raw static
     on_press:
       remote_transmitter.transmit_raw:

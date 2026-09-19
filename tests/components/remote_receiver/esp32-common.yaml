@@ -19,3 +19,7 @@ binary_sensor:
     name: Hob2Hood Light On
     hob2hood:
       command: light_on
+  - platform: remote_receiver
+    name: MCE Remote Power
+    rc6_mce:
+      command: 0x040C

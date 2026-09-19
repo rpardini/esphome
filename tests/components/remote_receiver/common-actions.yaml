@@ -133,6 +133,11 @@ on_rc6:
     - logger.log:
         format: "on_rc6: %u %u"
         args: ["x.address", "x.command"]
+on_rc6_mce:
+  then:
+    - logger.log:
+        format: "on_rc6_mce: %u %u"
+        args: ["x.address", "x.command"]
 on_rc_switch:
   then:
     - logger.log:
