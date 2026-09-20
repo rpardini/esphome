@@ -32,11 +32,21 @@
 #define USE_MDNS_DEVICE_INFO_TXT
 #endif
 
-#if defined(USE_HOST) && defined(USE_MDNS_AVAHI)
+#if defined(USE_HOST) && (defined(USE_MDNS_AVAHI) || defined(USE_MDNS_BONJOUR))
 #include <array>
+#include "mdns_host_addresses.h"
+#endif
+
+#if defined(USE_HOST) && defined(USE_MDNS_AVAHI)
 struct AvahiClient;
 struct AvahiEntryGroup;
 struct AvahiThreadedPoll;
+#endif
+
+#if defined(USE_HOST) && defined(USE_MDNS_BONJOUR)
+// Opaque handles from <dns_sd.h>, which the implementation includes
+struct _DNSServiceRef_t;
+struct _DNSRecordRef_t;
 #endif
 
 namespace esphome::mdns {
@@ -84,6 +94,10 @@ class MDNSComponent final : public Component
  public:
   void setup() override;
   void dump_config() override;
+#if defined(USE_HOST) && defined(USE_MDNS_BONJOUR)
+  /// Delivers mDNSResponder's replies; Bonjour is polled rather than threaded
+  void loop() override;
+#endif
 
   /// Size of buffer required for config hash hex string (8 hex chars + null terminator)
   static constexpr size_t CONFIG_HASH_STR_SIZE = format_hex_size(sizeof(uint32_t));
@@ -182,14 +196,6 @@ class MDNSComponent final : public Component
 
 #if defined(USE_HOST) && defined(USE_MDNS_AVAHI)
   friend struct AvahiCallbacks;
-  /// Most addresses published for the node's own hostname
-  static constexpr size_t AVAHI_MAX_ADDRESSES = 16;
-  struct AvahiHostAddress {
-    int interface;
-    int protocol;
-    uint8_t address[16];
-    bool operator==(const AvahiHostAddress &other) const;
-  };
 
   // Everything below runs on Avahi's poll thread, or with its lock held
   void avahi_client_changed_(AvahiClient *client, int state);
@@ -199,7 +205,6 @@ class MDNSComponent final : public Component
   void avahi_rename_services_(AvahiClient *client);
   void avahi_reset_groups_();
   /// Collects the machine's current addresses; runs on the main loop
-  static void avahi_collect_addresses_(StaticVector<AvahiHostAddress, AVAHI_MAX_ADDRESSES> &addresses);
   void avahi_check_addresses_();
 
   AvahiThreadedPoll *avahi_poll_{nullptr};
@@ -208,11 +213,36 @@ class MDNSComponent final : public Component
   // Ports are read on the main loop, since a port can come from a lambda
   std::array<uint16_t, MDNS_SERVICE_COUNT> avahi_ports_{};
   AvahiEntryGroup *avahi_address_group_{nullptr};
-  StaticVector<AvahiHostAddress, AVAHI_MAX_ADDRESSES> avahi_addresses_{};
+  HostAddresses avahi_addresses_{};
   // Allocated by Avahi; replaced by an alternative name after a collision
   char *avahi_instance_name_{nullptr};
   // "<name>.local", or empty when Avahi already publishes it as the machine's own hostname
   std::string avahi_host_name_;
+#endif
+
+#if defined(USE_HOST) && defined(USE_MDNS_BONJOUR)
+  friend struct BonjourCallbacks;
+  // Everything below runs on the main loop: the shared connection is polled from loop()
+  void bonjour_register_service_(size_t index);
+  void bonjour_register_services_();
+  void bonjour_publish_addresses_();
+  void bonjour_remove_addresses_();
+  void bonjour_check_addresses_();
+  /// Withdraws "<name>.local" and points the services at the machine's own hostname
+  void bonjour_drop_host_name_();
+
+  /// The one connection every service and record shares, so there is a single socket to poll
+  _DNSServiceRef_t *bonjour_connection_{nullptr};
+  std::array<_DNSServiceRef_t *, MDNS_SERVICE_COUNT> bonjour_services_{};
+  StaticVector<_DNSRecordRef_t *, MDNS_HOST_MAX_ADDRESSES> bonjour_records_{};
+  HostAddresses bonjour_addresses_{};
+  // Replaced by an alternative name when mDNSResponder resolves a collision
+  std::string bonjour_instance_name_;
+  // "<name>.local.", or empty when the machine already answers for the node name
+  std::string bonjour_host_name_;
+  uint32_t bonjour_last_poll_{0};
+  // Set from a record reply; acted on after the reply, not inside it
+  bool bonjour_host_conflict_{false};
 #endif
 };
 

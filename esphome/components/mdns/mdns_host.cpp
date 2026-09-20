@@ -16,9 +16,6 @@
 #include <avahi-common/malloc.h>
 #include <avahi-common/thread-watch.h>
 
-#include <ifaddrs.h>
-#include <net/if.h>
-#include <netinet/in.h>
 #include <strings.h>
 #include <unistd.h>
 
@@ -87,40 +84,6 @@ struct AvahiCallbacks {
   }
 };
 
-bool MDNSComponent::AvahiHostAddress::operator==(const AvahiHostAddress &other) const {
-  return this->interface == other.interface && this->protocol == other.protocol &&
-         memcmp(this->address, other.address, sizeof(this->address)) == 0;
-}
-
-void MDNSComponent::avahi_collect_addresses_(StaticVector<AvahiHostAddress, AVAHI_MAX_ADDRESSES> &addresses) {
-  addresses.clear();
-  struct ifaddrs *interfaces = nullptr;
-  if (getifaddrs(&interfaces) != 0) {
-    return;
-  }
-  for (struct ifaddrs *ifa = interfaces; ifa != nullptr && addresses.size() < AVAHI_MAX_ADDRESSES;
-       ifa = ifa->ifa_next) {
-    if (ifa->ifa_addr == nullptr || !(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK)) {
-      continue;
-    }
-    AvahiHostAddress entry{};
-    entry.interface = static_cast<int>(if_nametoindex(ifa->ifa_name));
-    if (ifa->ifa_addr->sa_family == AF_INET) {
-      entry.protocol = AVAHI_PROTO_INET;
-      const auto *sin = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
-      memcpy(entry.address, &sin->sin_addr, sizeof(sin->sin_addr));
-    } else if (ifa->ifa_addr->sa_family == AF_INET6) {
-      entry.protocol = AVAHI_PROTO_INET6;
-      const auto *sin6 = reinterpret_cast<struct sockaddr_in6 *>(ifa->ifa_addr);
-      memcpy(entry.address, &sin6->sin6_addr, sizeof(sin6->sin6_addr));
-    } else {
-      continue;
-    }
-    addresses.push_back(entry);
-  }
-  freeifaddrs(interfaces);
-}
-
 void MDNSComponent::avahi_reset_groups_() {
   for (auto *group : this->avahi_groups_) {
     if (group != nullptr) {
@@ -158,11 +121,12 @@ void MDNSComponent::avahi_publish_addresses_(AvahiClient *client) {
   }
   size_t published = 0;
   for (const auto &entry : this->avahi_addresses_) {
+    const bool is_ipv4 = entry.family == AF_INET;
     AvahiAddress address{};
-    address.proto = entry.protocol;
-    memcpy(address.data.data, entry.address, entry.protocol == AVAHI_PROTO_INET ? 4 : 16);
+    address.proto = is_ipv4 ? AVAHI_PROTO_INET : AVAHI_PROTO_INET6;
+    memcpy(address.data.data, entry.address, is_ipv4 ? 4 : 16);
     // No reverse records: Avahi already answers those for the machine's own hostname
-    int err = avahi_entry_group_add_address(this->avahi_address_group_, entry.interface, entry.protocol,
+    int err = avahi_entry_group_add_address(this->avahi_address_group_, entry.interface, address.proto,
                                             AVAHI_PUBLISH_NO_REVERSE, this->avahi_host_name_.c_str(), &address);
     if (err < 0) {
       // Usually an interface Avahi doesn't serve
@@ -271,8 +235,8 @@ void MDNSComponent::avahi_client_changed_(AvahiClient *client, int state) {
 }
 
 void MDNSComponent::avahi_check_addresses_() {
-  StaticVector<AvahiHostAddress, AVAHI_MAX_ADDRESSES> current;
-  avahi_collect_addresses_(current);
+  HostAddresses current;
+  collect_host_addresses(current);
   bool changed = current.size() != this->avahi_addresses_.size();
   for (size_t i = 0; !changed && i < current.size(); i++) {
     changed = !(current[i] == this->avahi_addresses_[i]);
@@ -305,7 +269,7 @@ void MDNSComponent::setup() {
     gethostname(machine_hostname, sizeof(machine_hostname) - 1);
     if (strcasecmp(machine_hostname, name.c_str()) != 0) {
       comp->avahi_host_name_ = name + ".local";
-      avahi_collect_addresses_(comp->avahi_addresses_);
+      collect_host_addresses(comp->avahi_addresses_);
       comp->set_interval(ADDRESS_CHECK_INTERVAL_MS, [comp]() { comp->avahi_check_addresses_(); });
     }
 
@@ -384,7 +348,7 @@ void MDNSComponent::on_shutdown() {
   this->avahi_instance_name_ = nullptr;
 }
 
-#else  // USE_MDNS_AVAHI
+#elif !defined(USE_MDNS_BONJOUR)  // USE_MDNS_AVAHI
 
 void MDNSComponent::setup() {
 #ifdef USE_MDNS_STORE_SERVICES
@@ -399,7 +363,7 @@ void MDNSComponent::setup() {
 #endif
   this->compile_records_(this->services_, mac_ptr, cfg_ptr);
 #endif
-  // Without Avahi the host platform doesn't publish anything
+  // Without Avahi or Bonjour the host platform doesn't publish anything
 }
 
 void MDNSComponent::on_shutdown() {}

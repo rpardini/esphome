@@ -96,3 +96,21 @@ def test_host_without_avahi_returns_false(
     with patch.object(mdns.pkg_config, "find_package", return_value=None):
         assert mdns.request_service_enable_disable() is False
     assert DEFINE not in _defines()
+
+
+def test_host_with_bonjour_adds_define(
+    set_core_config: SetCoreConfigCallable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _host_config(set_core_config, {CONF_DISABLED: False})
+    monkeypatch.setattr(mdns.sys, "platform", "darwin")
+    assert mdns.request_service_enable_disable() is True
+    assert {DEFINE, "USE_MDNS_STORE_SERVICES"} <= _defines()
+
+
+def test_host_without_bonjour_returns_false(
+    set_core_config: SetCoreConfigCallable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _host_config(set_core_config, {CONF_DISABLED: False, "bonjour": False})
+    monkeypatch.setattr(mdns.sys, "platform", "darwin")
+    assert mdns.request_service_enable_disable() is False
+    assert DEFINE not in _defines()
