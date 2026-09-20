@@ -16,16 +16,17 @@ static const char *const TAG = "image_decoder.jpeg";
 namespace esphome::runtime_image {
 
 /**
- * @brief Callback method that will be called by the JPEGDEC engine when a chunk
- * of the image is decoded.
+ * @brief Prepares a decode callback, or nullptr when the decoder pointer is missing.
  *
- * @param jpeg  The JPEGDRAW object, including the context data.
+ * Some very big images take too long to decode, so the watchdog is fed on each callback to
+ * avoid crashing if the executing task has one enabled.
  */
-static int draw_callback(JPEGDRAW *jpeg) {
-  ImageDecoder *decoder = (ImageDecoder *) jpeg->pUser;
-
-  // Some very big images take too long to decode, so feed the watchdog on each callback
-  // to avoid crashing if the executing task has a watchdog enabled.
+static ImageDecoder *begin_callback(JPEGDRAW *jpeg) {
+  auto *decoder = (ImageDecoder *) jpeg->pUser;
+  if (decoder == nullptr) {
+    ESP_LOGE(TAG, "Decoder pointer is null!");
+    return nullptr;
+  }
 #ifdef USE_ESP_IDF
   if (esp_task_wdt_status(nullptr) == ESP_OK) {
 #endif
@@ -33,6 +34,53 @@ static int draw_callback(JPEGDRAW *jpeg) {
 #ifdef USE_ESP_IDF
   }
 #endif
+  return decoder;
+}
+
+/**
+ * @brief Callback method that will be called by the JPEGDEC engine when a chunk
+ * of the image is decoded, for images decoded as RGB565.
+ *
+ * Each pixel arrives as one native 16-bit word.
+ *
+ * @param jpeg  The JPEGDRAW object, including the context data.
+ */
+static int draw_callback_rgb565(JPEGDRAW *jpeg) {
+  ImageDecoder *decoder = begin_callback(jpeg);
+  if (decoder == nullptr) {
+    return 0;
+  }
+  size_t position = 0;
+  size_t height = static_cast<size_t>(jpeg->iHeight);
+  size_t width = static_cast<size_t>(jpeg->iWidth);
+  for (size_t y = 0; y < height; y++) {
+    for (size_t x = 0; x < width; x++) {
+      const uint16_t pixel = jpeg->pPixels[position++];
+      const uint8_t red = (pixel >> 11) & 0x1F;
+      const uint8_t green = (pixel >> 5) & 0x3F;
+      const uint8_t blue = pixel & 0x1F;
+      // The low bits are repeated into the gap, as image::Image does when it reads RGB565 back.
+      // Alpha is 0xFF like the RGB8888 path produced, since JPEG carries none.
+      Color color((red << 3) | (red >> 2), (green << 2) | (green >> 4), (blue << 3) | (blue >> 2), 0xFF);
+      decoder->draw(jpeg->x + x, jpeg->y + y, 1, 1, color);
+    }
+  }
+  return 1;
+}
+
+/**
+ * @brief Callback method that will be called by the JPEGDEC engine when a chunk
+ * of the image is decoded, for images decoded as RGB8888.
+ *
+ * Each pixel arrives as two native 16-bit words, holding the bytes red, green, blue and alpha.
+ *
+ * @param jpeg  The JPEGDRAW object, including the context data.
+ */
+static int draw_callback_rgb8888(JPEGDRAW *jpeg) {
+  ImageDecoder *decoder = begin_callback(jpeg);
+  if (decoder == nullptr) {
+    return 0;
+  }
   size_t position = 0;
   size_t height = static_cast<size_t>(jpeg->iHeight);
   size_t width = static_cast<size_t>(jpeg->iWidth);
@@ -41,11 +89,6 @@ static int draw_callback(JPEGDRAW *jpeg) {
       auto rg = decode_value(jpeg->pPixels[position++]);
       auto ba = decode_value(jpeg->pPixels[position++]);
       Color color(rg[1], rg[0], ba[1], ba[0]);
-
-      if (!decoder) {
-        ESP_LOGE(TAG, "Decoder pointer is null!");
-        return 0;
-      }
       decoder->draw(jpeg->x + x, jpeg->y + y, 1, 1, color);
     }
   }
@@ -63,7 +106,14 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
   // If size unknown, try to decode and see if it's valid
   // The JPEGDEC library will fail gracefully if data is incomplete
 
-  if (!this->jpeg_.openRAM(buffer, size, draw_callback)) {
+  // An RGB565 image is decoded straight to RGB565: it saves packing every pixel into 32 bits
+  // only to reduce it again, and it avoids a defect in JPEGDEC 1.8.4. Its SIMD colour conversion
+  // writes RGB8888 as blue, green, red, alpha while its plain C code writes red, green, blue,
+  // alpha, so red and blue come out swapped - on arm64 (NEON) for 4:2:0 images, and on x86_64
+  // (SSE2) for 4:4:4 ones as well. The RGB565 output is correct in every case. Image types that
+  // need eight bits per channel still ask for RGB8888 and remain affected on those machines.
+  const bool to_rgb565 = this->image_->get_type() == image::IMAGE_TYPE_RGB565;
+  if (!this->jpeg_.openRAM(buffer, size, to_rgb565 ? draw_callback_rgb565 : draw_callback_rgb8888)) {
     ESP_LOGE(TAG, "Could not open image for decoding: %d", this->jpeg_.getLastError());
     return DECODE_ERROR_INVALID_TYPE;
   }
@@ -78,7 +128,7 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
   ESP_LOGD(TAG, "Image size: %d x %d, bpp: %d", this->jpeg_.getWidth(), this->jpeg_.getHeight(), this->jpeg_.getBpp());
 
   this->jpeg_.setUserPointer(this);
-  this->jpeg_.setPixelType(RGB8888);
+  this->jpeg_.setPixelType(to_rgb565 ? RGB565_LITTLE_ENDIAN : RGB8888);
   if (!this->set_size(this->jpeg_.getWidth(), this->jpeg_.getHeight())) {
     return DECODE_ERROR_OUT_OF_MEMORY;
   }
