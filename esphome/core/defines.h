@@ -596,6 +596,10 @@
 
 #ifdef USE_HOST
 #define USE_HTTP_REQUEST_RESPONSE
+#ifdef __APPLE__
+// Reaches the System Management Controller through IOKit, so a macOS host only
+#define USE_APPLE_SMC
+#endif
 // Host only: the uart arm would shadow the native logger UART arms in other envs
 #define USE_IMPROV_SERIAL_UART
 #define USE_SOCKET_IMPL_BSD_SOCKETS
