@@ -861,6 +861,10 @@
 #define USE_ESPHOME_HOST_MAC_ADDRESS {0x98, 0x35, 0x69, 0xab, 0xf6, 0x79}
 #define USE_HTTP_REQUEST_RESPONSE
 #define USE_SERIAL_PROXY_HOST_UART
+#ifdef __APPLE__
+// Reaches the System Management Controller through IOKit, so a macOS host only
+#define USE_APPLE_SMC
+#endif
 // Host only: the uart arm would shadow the native logger UART arms in other envs
 #define USE_IMPROV_SERIAL_UART
 #define USE_SOCKET_IMPL_BSD_SOCKETS
