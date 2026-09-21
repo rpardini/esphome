@@ -1,0 +1,26 @@
+esphome:
+  name: apple-smc-test
+
+host:
+
+logger:
+
+apple_smc:
+  discovery:
+    include:
+      - "TCMz"
+      - "F0*"
+      - "RPlt"
+
+sensor:
+  - platform: apple_smc
+    key: TC0P
+    name: CPU Proximity
+  - platform: apple_smc
+    key: VD0R
+    name: DC In Voltage
+
+text_sensor:
+  - platform: apple_smc
+    key: zSEm
+    name: Serial
