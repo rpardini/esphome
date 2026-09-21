@@ -1,4 +1,5 @@
-#ifdef USE_HOST
+#include "esphome/core/defines.h"
+#if defined(USE_HOST) && defined(USE_TEXT_SENSOR)
 #if defined(__linux__)
 
 #include "hwmon_text_sensor.h"
@@ -43,4 +44,4 @@ void HwmonTextSensor::dump_config() {
 #else  // defined(__linux__)
 #error "hwmon is only supported on Linux"
 #endif  // defined(__linux__)
-#endif  // USE_HOST
+#endif  // defined(USE_HOST) && defined(USE_TEXT_SENSOR)

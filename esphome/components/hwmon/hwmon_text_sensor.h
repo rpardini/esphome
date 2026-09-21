@@ -1,6 +1,7 @@
 #pragma once
 
-#ifdef USE_HOST
+#include "esphome/core/defines.h"
+#if defined(USE_HOST) && defined(USE_TEXT_SENSOR)
 
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/core/component.h"
@@ -26,4 +27,4 @@ class HwmonTextSensor : public text_sensor::TextSensor, public PollingComponent 
 
 }  // namespace esphome::hwmon
 
-#endif  // USE_HOST
+#endif  // defined(USE_HOST) && defined(USE_TEXT_SENSOR)
