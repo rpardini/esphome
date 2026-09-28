@@ -1,0 +1,37 @@
+esphome:
+  name: linux-hwmon-simple
+  friendly_name: Linux HWMon Simple
+
+host:
+  # Any locally administered MAC; it only has to be unique among your ESPHome devices.
+  mac_address: "02:ec:40:00:00:03"
+
+logger:
+  level: DEBUG
+
+api:
+
+time:
+  - platform: host
+    id: host_time
+
+# ---------------------------------------------------------------------------
+# hwmon
+# Discovery scans /sys/class/hwmon on the machine that runs `esphome compile`.
+# That is the arm64 box itself here, so it picks up the right chips.
+# List chip names first:  grep . /sys/class/hwmon/*/name
+# ---------------------------------------------------------------------------
+hwmon:
+  discovery:
+    update_interval: 30s
+    exclude:
+      # Already defined below with an id, so the display can use it.
+      - "package_thermal/temp1_*"
+
+sensor:
+  - platform: hwmon
+    id: cpu_temp
+    chip: package_thermal # <-- change to a chip name from the grep above
+    input: temp1
+    name: CPU Temperature
+    update_interval: 5s
