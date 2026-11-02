@@ -9,18 +9,30 @@ from esphome.components.esp32 import (
     request_http_client,
     require_certificate_bundle,
 )
+from esphome.config_helpers import filter_source_files_from_platform
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_BITS_PER_SAMPLE,
     CONF_NUM_CHANNELS,
     CONF_SAMPLE_RATE,
     CONF_SIZE,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
+    PlatformFramework,
 )
 from esphome.core import CORE
 import esphome.final_validate as fv
 from esphome.types import ConfigType
 
-AUTO_LOAD = ["ring_buffer"]
+
+def AUTO_LOAD() -> list[str]:
+    # The ring buffer and the decoders built on it use FreeRTOS
+    return ["ring_buffer"] if CORE.is_esp32 else []
+
+
+# esp-audio-libs release, used for the ESP-IDF component and the host library
+ESP_AUDIO_LIBS_VERSION = "4.1.0"
+
 CODEOWNERS = ["@kahrendt"]
 DOMAIN = "audio"
 audio_ns = cg.esphome_ns.namespace("audio")
@@ -173,13 +185,23 @@ CODECS_SCHEMA = cv.Schema(
     }
 )
 
+
+def _validate_codecs_platform(config: ConfigType) -> ConfigType:
+    if CONF_CODECS in config and not CORE.is_esp32:
+        raise cv.Invalid(
+            f"'{CONF_CODECS}' is only supported on ESP32", path=[CONF_CODECS]
+        )
+    return config
+
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.Optional(CONF_CODECS): _maybe_empty_codec(CODECS_SCHEMA),
         }
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
+    _validate_codecs_platform,
 )
 
 AUDIO_COMPONENT_SCHEMA = cv.Schema(
@@ -327,12 +349,39 @@ def _emit_memory_pair(value: str | None, psram_key: str, internal_key: str) -> N
         add_idf_sdkconfig_option(internal_key, True)
 
 
+def _add_host_audio_libs() -> None:
+    """Build the gain and PCM conversion code from esp-audio-libs that microphone sources use."""
+    from esphome.components import host
+
+    host.add_library(
+        "esp-audio-libs",
+        f"https://github.com/esphome/esp-audio-libs.git#v{ESP_AUDIO_LIBS_VERSION}",
+        {
+            "platforms": "*",
+            "build": {
+                "srcDir": "src",
+                "includeDir": "include",
+                # The other sources need ESP-IDF (heap_caps) or are not used on host
+                "srcFilter": ["+<gain.cpp>", "+<pcm_convert.cpp>"],
+            },
+            "ESPHOME": {"PRIVATE_INCLUDE_DIRS": ["src"]},
+        },
+    )
+
+
 async def to_code(config: ConfigType) -> None:
+    if CORE.is_host:
+        # Only the stream and file type helpers in audio.cpp build on host, plus the library parts above
+        _add_host_audio_libs()
+        return
+    if not CORE.is_esp32:
+        return
+
     request_http_client()
     # HTTPS streams verify the server against the root certificate bundle
     require_certificate_bundle()
 
-    add_idf_component(name="esphome/esp-audio-libs", ref="4.1.0")
+    add_idf_component(name="esphome/esp-audio-libs", ref=ESP_AUDIO_LIBS_VERSION)
 
     data = _get_data()
 
@@ -429,3 +478,15 @@ async def to_code(config: ConfigType) -> None:
     if data.wav_support:
         cg.add_define("USE_AUDIO_WAV_SUPPORT")
         add_idf_component(name="esphome/micro-wav", ref="0.2.0")
+
+
+_ESP32_ONLY = {PlatformFramework.ESP32_IDF, PlatformFramework.ESP32_ARDUINO}
+
+FILTER_SOURCE_FILES = filter_source_files_from_platform(
+    {
+        "audio_decoder.cpp": _ESP32_ONLY,
+        "audio_reader.cpp": _ESP32_ONLY,
+        "audio_resampler.cpp": _ESP32_ONLY,
+        "audio_transfer_buffer.cpp": _ESP32_ONLY,
+    }
+)

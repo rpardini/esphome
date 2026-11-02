@@ -1,7 +1,6 @@
 #ifdef USE_HOST
 #include <gtest/gtest.h>
 
-#include <cstring>
 #include <string>
 #include <vector>
 
@@ -15,10 +14,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/preferences.h"
 
-// Compile the ESP32-only player in this translation unit against the FreeRTOS queue double in __sdk.
-#define USE_ESP32
-// NOLINTNEXTLINE(bugprone-suspicious-include): exercise production code with the host FreeRTOS double.
-#include "esphome/components/speaker_source/speaker_source_media_player.cpp"
+#include "esphome/components/speaker_source/speaker_source_media_player.h"
 
 namespace esphome::speaker_source::testing {
 
@@ -60,7 +56,6 @@ class SpeakerSourceStop : public ::testing::Test {
  protected:
   void SetUp() override {
     host::setup_preferences();
-    queue_test::sent.clear();
     this->player_.set_volume_increment(0.05f);
     this->player_.set_volume_initial(0.5f);
     this->player_.set_volume_min(0.0f);
@@ -74,8 +69,14 @@ class SpeakerSourceStop : public ::testing::Test {
 
   /// Runs the player's loop enough times to drain the commands it queues for itself.
   void run_loop() {
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 4; i++) {
+      // The loop runs one queued command per call and always completes an advance, so each advance is the
+      // queue's front exactly once, just before it runs.
+      auto &queue = this->player_.media_control_command_queue_;
+      if (!queue.empty() && queue.front().type == MediaPlayerControlCommand::PLAYLIST_ADVANCE)
+        this->advances_++;
       this->player_.call();
+    }
   }
   void play(const std::string &uri) {
     this->player_.make_call().set_media_url(uri).perform();
@@ -93,21 +94,13 @@ class SpeakerSourceStop : public ::testing::Test {
     this->source_.report(state);
     this->run_loop();
   }
-  /// How many times the player queued a playlist advance for itself.
-  size_t playlist_advances() const {
-    size_t count = 0;
-    for (const auto &item : queue_test::sent) {
-      MediaPlayerControlCommand command;
-      std::memcpy(&command, item.data(), sizeof(command));
-      if (command.type == MediaPlayerControlCommand::PLAYLIST_ADVANCE)
-        count++;
-    }
-    return count;
-  }
+  /// How many times the player ran a playlist advance it queued for itself.
+  size_t playlist_advances() const { return this->advances_; }
 
   FakeSpeaker speaker_;
   FakeSource source_;
   SpeakerSourceMediaPlayer player_;
+  size_t advances_{0};
 };
 
 TEST_F(SpeakerSourceStop, StopReachesASourceThatHasNotStartedYet) {
@@ -148,7 +141,7 @@ TEST_F(SpeakerSourceStop, StopOfAStartingSourceThatGoesIdleLater) {
 TEST_F(SpeakerSourceStop, StopOfAPlayingSourceDoesNotAdvance) {
   for (bool idle_on_stop : {false, true}) {
     SCOPED_TRACE(idle_on_stop ? "IDLE during STOP" : "IDLE after STOP");
-    queue_test::sent.clear();
+    this->advances_ = 0;
     this->source_.commands.clear();
     this->source_.played.clear();
     this->source_.idle_on_stop = idle_on_stop;

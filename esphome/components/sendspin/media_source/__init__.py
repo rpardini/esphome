@@ -8,6 +8,8 @@ from esphome.const import (
     CONF_ID,
     CONF_SAMPLE_RATE,
     CONF_TASK_STACK_IN_PSRAM,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
 )
 from esphome.types import ConfigType
 
@@ -113,7 +115,7 @@ CONFIG_SCHEMA = cv.All(
             ),
         }
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     _resolve_codecs,
     _register,
 )

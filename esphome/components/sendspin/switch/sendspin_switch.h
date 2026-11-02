@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#if defined(USE_ESP_IDF) && defined(USE_SENDSPIN_SWITCH)
+#if (defined(USE_ESP_IDF) || defined(USE_HOST)) && defined(USE_SENDSPIN_SWITCH)
 
 #include "esphome/components/sendspin/sendspin_hub.h"
 #include "esphome/components/switch/switch.h"

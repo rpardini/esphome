@@ -1,6 +1,6 @@
 #include "sendspin_image.h"
 
-#if defined(USE_ESP_IDF) && defined(USE_SENDSPIN_ARTWORK)
+#if (defined(USE_ESP_IDF) || defined(USE_HOST)) && defined(USE_SENDSPIN_ARTWORK)
 
 #include "esphome/core/log.h"
 

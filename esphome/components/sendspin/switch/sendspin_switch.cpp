@@ -1,6 +1,6 @@
 #include "sendspin_switch.h"
 
-#if defined(USE_ESP_IDF) && defined(USE_SENDSPIN_SWITCH)
+#if (defined(USE_ESP_IDF) || defined(USE_HOST)) && defined(USE_SENDSPIN_SWITCH)
 
 #include "esphome/core/log.h"
 #include "esphome/core/preferences.h"

@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#if defined(USE_ESP_IDF) && defined(USE_TEXT_SENSOR)
+#if (defined(USE_ESP_IDF) || defined(USE_HOST)) && defined(USE_TEXT_SENSOR)
 
 #include "esphome/components/sendspin/sendspin_hub.h"
 #include "esphome/components/text_sensor/text_sensor.h"
