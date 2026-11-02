@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components import text_sensor
 import esphome.config_validation as cv
-from esphome.const import CONF_ID, CONF_TYPE
+from esphome.const import CONF_ID, CONF_TYPE, PLATFORM_ESP32, PLATFORM_HOST
 from esphome.types import ConfigType
 
 from .. import (
@@ -63,7 +63,7 @@ CONFIG_SCHEMA = cv.All(
         },
         key=CONF_TYPE,
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     _request_roles,
 )
 

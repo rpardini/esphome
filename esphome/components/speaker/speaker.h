@@ -40,6 +40,14 @@ class Speaker {
   virtual size_t play(const uint8_t *data, size_t length, TickType_t ticks_to_wait) {
     return this->play(data, length);
   };
+#else
+  /// @brief Plays the provided audio data, waiting up to ``ms_to_wait`` for buffer space.
+  /// If the speaker component doesn't implement this method, it falls back to the play method without this parameter.
+  /// @param data Audio data in the format specified by ``set_audio_stream_info`` method.
+  /// @param length The length of the audio data in bytes.
+  /// @param ms_to_wait The milliseconds to wait before writing as much data as possible to the internal buffer.
+  /// @return The number of bytes that were actually written to the speaker's internal buffer.
+  virtual size_t play(const uint8_t *data, size_t length, uint32_t ms_to_wait) { return this->play(data, length); };
 #endif
 
   /// @brief Plays the provided audio data.

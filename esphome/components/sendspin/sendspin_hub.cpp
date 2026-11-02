@@ -1,6 +1,6 @@
 #include "sendspin_hub.h"
 
-#ifdef USE_ESP_IDF
+#if defined(USE_ESP_IDF) || defined(USE_HOST)
 
 #include "esphome/components/network/util.h"
 #ifdef USE_ETHERNET
@@ -15,7 +15,9 @@
 #include "esphome/core/log.h"
 #include "esphome/core/version.h"
 
+#ifdef USE_ESP32
 #include <esp_log.h>
+#endif
 
 #include <cstring>
 #include <memory>
@@ -566,4 +568,4 @@ sendspin::PlayerRole *SendspinHub::get_player_role() {
 
 }  // namespace esphome::sendspin_
 
-#endif  // USE_ESP_IDF
+#endif  // USE_ESP_IDF || USE_HOST

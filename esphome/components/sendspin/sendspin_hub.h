@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#ifdef USE_ESP_IDF
+#if defined(USE_ESP_IDF) || defined(USE_HOST)
 
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
@@ -453,4 +453,4 @@ extern SendspinHub *global_sendspin_hub;  // NOLINT(cppcoreguidelines-avoid-non-
 
 }  // namespace esphome::sendspin_
 
-#endif  // USE_ESP_IDF
+#endif  // USE_ESP_IDF || USE_HOST

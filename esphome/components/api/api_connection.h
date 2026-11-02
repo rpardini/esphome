@@ -223,7 +223,7 @@ class APIConnection final : public APIServerConnectionBase {
   void on_z_wave_proxy_request(const ZWaveProxyRequest &msg);
 #endif
 
-#if defined(USE_SENDSPIN) && defined(USE_ESP_IDF)
+#if defined(USE_SENDSPIN) && (defined(USE_ESP_IDF) || defined(USE_HOST))
   void on_sendspin_pairing_token_request();
 #endif
 
@@ -436,7 +436,7 @@ class APIConnection final : public APIServerConnectionBase {
 #ifdef USE_VOICE_ASSISTANT
   bool send_voice_assistant_get_configuration_response_(const VoiceAssistantConfigurationRequest &msg);
 #endif
-#if defined(USE_SENDSPIN) && defined(USE_ESP_IDF)
+#if defined(USE_SENDSPIN) && (defined(USE_ESP_IDF) || defined(USE_HOST))
   bool send_sendspin_pairing_token_response_();
 #endif
 

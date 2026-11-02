@@ -48,7 +48,7 @@
 #ifdef USE_ZWAVE_PROXY
 #include "esphome/components/zwave_proxy/zwave_proxy.h"
 #endif
-#if defined(USE_SENDSPIN) && defined(USE_ESP_IDF)
+#if defined(USE_SENDSPIN) && (defined(USE_ESP_IDF) || defined(USE_HOST))
 #include "esphome/components/sendspin/sendspin_hub.h"
 #endif
 #ifdef USE_WATER_HEATER
@@ -1405,7 +1405,7 @@ void APIConnection::on_z_wave_proxy_request(const ZWaveProxyRequest &msg) {
 }
 #endif
 
-#if defined(USE_SENDSPIN) && defined(USE_ESP_IDF)
+#if defined(USE_SENDSPIN) && (defined(USE_ESP_IDF) || defined(USE_HOST))
 bool APIConnection::send_sendspin_pairing_token_response_() {
   SendspinPairingTokenResponse resp;
 #ifdef USE_API_NOISE
@@ -2126,7 +2126,7 @@ bool APIConnection::send_device_capabilities_response_() {
 #ifdef USE_API_WIZARD
   resp.wizard.configured = true;
 #endif
-#if defined(USE_SENDSPIN) && defined(USE_ESP_IDF)
+#if defined(USE_SENDSPIN) && (defined(USE_ESP_IDF) || defined(USE_HOST))
   resp.sendspin.feature_flags = sendspin_::global_sendspin_hub->get_feature_flags();
   resp.sendspin.client_id = sendspin_::global_sendspin_hub->get_client_id();
 #endif

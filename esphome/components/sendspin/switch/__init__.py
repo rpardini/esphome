@@ -4,7 +4,14 @@ import esphome.codegen as cg
 from esphome.components import switch
 from esphome.components.const import CONF_ENABLED
 import esphome.config_validation as cv
-from esphome.const import CONF_PLATFORM, CONF_SWITCH, CONF_TYPE, ENTITY_CATEGORY_CONFIG
+from esphome.const import (
+    CONF_PLATFORM,
+    CONF_SWITCH,
+    CONF_TYPE,
+    ENTITY_CATEGORY_CONFIG,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
+)
 import esphome.final_validate as fv
 from esphome.types import ConfigType
 
@@ -59,7 +66,7 @@ CONFIG_SCHEMA = cv.All(
         },
         key=CONF_TYPE,
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     _request_switch,
 )
 

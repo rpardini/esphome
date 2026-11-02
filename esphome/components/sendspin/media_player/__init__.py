@@ -2,7 +2,7 @@ import esphome.codegen as cg
 from esphome.components import media_player
 from esphome.components.const import CONF_VOLUME_INCREMENT
 import esphome.config_validation as cv
-from esphome.const import CONF_ID
+from esphome.const import CONF_ID, PLATFORM_ESP32, PLATFORM_HOST
 from esphome.types import ConfigType
 
 from .. import CONF_SENDSPIN_ID, SendspinHub, request_controller_support, sendspin_ns
@@ -31,7 +31,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_VOLUME_INCREMENT, default=0.05): cv.percentage,
         }
     ),
-    cv.only_on_esp32,
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
     _request_roles,
 )
 

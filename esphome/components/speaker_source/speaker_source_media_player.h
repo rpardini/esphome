@@ -2,7 +2,7 @@
 
 #include "esphome/core/defines.h"
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) || defined(USE_HOST)
 
 #include "esphome/components/audio/audio.h"
 #include "esphome/components/media_source/media_source.h"
@@ -11,16 +11,17 @@
 
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/preferences.h"
 
 #include <array>
 #include <atomic>
 #include <memory>
 #include <vector>
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
 
 namespace esphome::speaker_source {
+
+static constexpr size_t MEDIA_CONTROLS_QUEUE_LENGTH = 20;
 
 // THREADING MODEL:
 // This component coordinates media sources that run their own decode tasks with speakers
@@ -46,7 +47,7 @@ namespace esphome::speaker_source {
 // Source tasks use defer() for all requests (volume, mute, play_uri).
 //
 // Thread-safe communication:
-// - FreeRTOS queue (media_control_command_queue_): control() -> loop() for play/command dispatch
+// - Command queue (media_control_command_queue_): control() -> loop() for play/command dispatch
 // - defer(): SourceBinding::request_volume/request_mute/request_play_uri -> main loop
 // - Atomic fields (active_source, pending_frames): shared between all three thread contexts
 //
@@ -136,7 +137,7 @@ struct MediaPlayerControlCommand {
   uint8_t pipeline;  // MEDIA_PIPELINE or ANNOUNCEMENT_PIPELINE
 
   union {
-    std::string *uri;  // Owned pointer, must delete after xQueueReceive (for PLAY_URI and ENQUEUE_URI)
+    std::string *uri;  // Owned pointer, must delete after it leaves the queue (for PLAY_URI and ENQUEUE_URI)
     media_player::MediaPlayerCommand command;
   } data;
 };
@@ -233,7 +234,7 @@ class SpeakerSourceMediaPlayer final : public Component, public media_player::Me
   /// @brief Clears shuffle indices and adjusts playlist_index to maintain current track
   void unshuffle_playlist_(uint8_t pipeline);
 
-  QueueHandle_t media_control_command_queue_;
+  StaticRingBuffer<MediaPlayerControlCommand, MEDIA_CONTROLS_QUEUE_LENGTH> media_control_command_queue_;
 
   // Pipeline context for media (index 0) and announcement (index 1) pipelines.
   // See THREADING MODEL at top of namespace for access rules.
@@ -260,4 +261,4 @@ class SpeakerSourceMediaPlayer final : public Component, public media_player::Me
 
 }  // namespace esphome::speaker_source
 
-#endif  // USE_ESP32
+#endif  // USE_ESP32 || USE_HOST

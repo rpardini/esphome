@@ -22,15 +22,29 @@ from esphome.const import (
     CONF_TASK_STACK_IN_PSRAM,
     CONF_VERSION,
     CONF_WIDTH,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
 )
 from esphome.core import CORE
 from esphome.cpp_generator import MockObj
 from esphome.types import ConfigType
 
+from .host_libraries import add_host_libraries
+
 _LOGGER = logging.getLogger(__name__)
 
-# mdns for autodiscovery
-AUTO_LOAD = ["mdns"]
+
+def AUTO_LOAD(config: ConfigType) -> list[str]:
+    """Load mdns for autodiscovery, and noise for sendspin-cpp's noise-c on host."""
+    # On ESP32 the sendspin-cpp component pulls in noise-c itself.
+    # A falsy config is a tooling probe for the maximal set.
+    if not config or CORE.is_host:
+        return ["mdns", "noise"]
+    return ["mdns"]
+
+
+# sendspin-cpp release, used for the ESP-IDF component and the host libraries
+SENDSPIN_CPP_VERSION = "0.9.3"
 CODEOWNERS = ["@kahrendt"]
 DEPENDENCIES = ["network"]
 DOMAIN = "sendspin"
@@ -270,6 +284,13 @@ def _request_high_performance_networking(config: ConfigType) -> ConfigType:
     return config
 
 
+def _validate_esp32_framework(config: ConfigType) -> ConfigType:
+    # sendspin-cpp needs noise-c as an ESP-IDF component, which Arduino below IDF 6.0 cannot use.
+    if CORE.is_esp32:
+        return cv.only_with_framework("esp-idf")(config)
+    return config
+
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -297,9 +318,8 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_ON_PAIRING_FAILED): automation.validate_automation({}),
         }
     ),
-    cv.only_on_esp32,
-    # sendspin-cpp needs noise-c as an ESP-IDF component, which Arduino below IDF 6.0 cannot use.
-    cv.only_with_framework("esp-idf"),
+    cv.only_on([PLATFORM_ESP32, PLATFORM_HOST]),
+    _validate_esp32_framework,
     _request_high_performance_networking,
 )
 
@@ -419,11 +439,6 @@ async def to_code(config: ConfigType) -> None:
 
     await automation.build_callback_automations(var, config, _CALLBACK_AUTOMATIONS)
 
-    # sendspin-cpp library
-    esp32.add_idf_component(name="sendspin/sendspin-cpp", ref="0.9.3")
-    # esp_websocket_client links esp_tls even for ws:// connections.
-    esp32.request_tls()
-
     cg.add_define("USE_SENDSPIN", True)  # for MDNS and the native API
 
     # Service starts disabled and the hub enables it; always advertised where unsupported
@@ -434,11 +449,10 @@ async def to_code(config: ConfigType) -> None:
     data = _get_data()
 
     # The color and source roles are not yet wired up in ESPHome; disable them in the library for now.
-    esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_COLOR", False)
-    esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_SOURCE", False)
+    disabled_roles = ["COLOR", "SOURCE"]
 
     # Configure Sendspin roles based on requested features (ESPHome internally via USE_SENDSPIN_*)
-    # and disable building unused code paths in the sendspin-cpp library (IDF SDKConfig via CONFIG_SENDSPIN_ENABLE_*).
+    # and disable building unused code paths in the sendspin-cpp library.
     if data.artwork_support:
         cg.add_define("USE_SENDSPIN_ARTWORK", True)
 
@@ -465,17 +479,17 @@ async def to_code(config: ConfigType) -> None:
         )
         cg.add(var.set_artwork_config(artwork_config))
     else:
-        esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_ARTWORK", False)
+        disabled_roles.append("ARTWORK")
 
     if data.controller_support:
         cg.add_define("USE_SENDSPIN_CONTROLLER", True)
     else:
-        esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_CONTROLLER", False)
+        disabled_roles.append("CONTROLLER")
 
     if data.metadata_support:
         cg.add_define("USE_SENDSPIN_METADATA", True)
     else:
-        esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_METADATA", False)
+        disabled_roles.append("METADATA")
 
     if data.player_support:
         cg.add_define("USE_SENDSPIN_PLAYER", True)
@@ -523,12 +537,22 @@ async def to_code(config: ConfigType) -> None:
         )
         cg.add(var.set_player_config(player_config_struct))
     else:
-        esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_PLAYER", False)
+        disabled_roles.append("PLAYER")
 
     if not data.player_support or CODEC_OPUS not in data.player_config[CONF_CODECS]:
-        esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_OPUS", False)
+        disabled_roles.append("OPUS")
 
     if data.visualizer_support:
         cg.add_define("USE_SENDSPIN_VISUALIZER", True)
     else:
-        esp32.add_idf_sdkconfig_option("CONFIG_SENDSPIN_ENABLE_VISUALIZER", False)
+        disabled_roles.append("VISUALIZER")
+
+    # sendspin-cpp library
+    if CORE.is_esp32:
+        esp32.add_idf_component(name="sendspin/sendspin-cpp", ref=SENDSPIN_CPP_VERSION)
+        # esp_websocket_client links esp_tls even for ws:// connections.
+        esp32.request_tls()
+        for role in disabled_roles:
+            esp32.add_idf_sdkconfig_option(f"CONFIG_SENDSPIN_ENABLE_{role}", False)
+    else:
+        add_host_libraries(SENDSPIN_CPP_VERSION, disabled_roles)
