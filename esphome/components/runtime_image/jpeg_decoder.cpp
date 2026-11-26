@@ -86,6 +86,20 @@ static int draw_callback(JPEGDRAW *jpeg) {
   size_t position = 0;
   size_t height = static_cast<size_t>(jpeg->iHeight);
   size_t width = static_cast<size_t>(jpeg->iWidth);
+  if (decoder->uses_rgb565_pixels()) {
+    for (size_t y = 0; y < height; y++) {
+      for (size_t x = 0; x < width; x++) {
+        const uint16_t pixel = jpeg->pPixels[position++];
+        const uint8_t red = (pixel >> 11) & 0x1F;
+        const uint8_t green = (pixel >> 5) & 0x3F;
+        const uint8_t blue = pixel & 0x1F;
+        // The low bits are repeated into the gap, as image::Image does when it reads RGB565 back
+        Color color((red << 3) | (red >> 2), (green << 2) | (green >> 4), (blue << 3) | (blue >> 2), 0xFF);
+        decoder->draw(jpeg->x + x, jpeg->y + y, 1, 1, color);
+      }
+    }
+    return 1;
+  }
   for (size_t y = 0; y < height; y++) {
     for (size_t x = 0; x < width; x++) {
       auto rg = decode_value(jpeg->pPixels[position++]);
@@ -180,7 +194,10 @@ int JpegDecoder::start_() {
     ESP_LOGD(TAG, "Decoding at 1/%d size, %d x %d", this->scale_, decoded_width, decoded_height);
   }
   this->prepare_draw_(decoded_width, decoded_height);
-  if (this->direct_rgb565_) {
+  // JPEGDEC's SSE2 RGB8888 conversion (x86 hosts) swaps red and blue, so an RGB565 image always asks
+  // for RGB565, also when it cannot be drawn straight into the buffer
+  this->rgb565_pixels_ = this->image_->get_type() == image::IMAGE_TYPE_RGB565;
+  if (this->rgb565_pixels_) {
     // JPEGDEC's RGB565_BIG_ENDIAN output is not byte swapped on every build (the x86 host build
     // returns little-endian words for it), so the byte order is applied in draw_rgb565 instead
     this->jpeg_->setPixelType(RGB565_LITTLE_ENDIAN);
